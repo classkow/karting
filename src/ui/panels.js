@@ -131,7 +131,7 @@ export function initControlPanel(container, api) {
     <div class="tach-wrap">${tachSVG()}</div>
     <div class="drive-stats">
       <div class="stat"><span class="stat-v" id="st-speed">0</span><span class="stat-l">理论车速 km/h</span></div>
-      <div class="stat"><span class="stat-v" id="st-gear">${api.getGearLabel?.() ?? 'N'}</span><span class="stat-l">离合状态</span></div>
+      <div class="stat"><span class="stat-v" id="st-gear">N</span><span class="stat-l">离合状态</span></div>
     </div>
 
     <div class="ctl-block">
@@ -200,9 +200,6 @@ export function initControlPanel(container, api) {
     $('#v-explode').textContent = v + '%';
   });
   $('#rg-steer').addEventListener('dblclick', () => setSteerUI(0));
-  $('#rg-steer').addEventListener('click', (e) => {
-    if (e.detail === 2) setSteerUI(0);
-  });
 
   btnEngine.addEventListener('click', () => api.onEngine());
   tgRotate.addEventListener('click', () => api.onRotate());

@@ -28,9 +28,13 @@ src/
 │  ├─ geometry.js 车床/链轮/刹车盘等几何工具
 │  └─ parts/      chassis 车架 · bodywork 覆盖件 · wheels 车轮 · engine 发动机
 │                 drivetrain 传动 · steering 转向 · brakes 制动 · cockpit 操纵
-├─ sim/           state.js 转速状态机（起动/怠速/油门/传动比）
+├─ sim/           state.js 转速状态机（起动/怠速/油门/传动比） · kinematics.js 机构运动学纯数学（可单测）
 ├─ interaction/   picking 拾取描边 · explode 爆炸 · cameraRig 相机
 └─ ui/            panels.js 面板 · icons.js 图标
 ```
 
 架构要点：每个部件通过 `registerPart(group, def)` 注册（名称/系统/说明/爆炸向量），每帧动画由 `addUpdate` 注册的更新器统一驱动；运动学（活塞位移、链条相位、拉杆角度）全部按机构约束解算，而非关键帧。
+
+机构解算的纯数学集中在 `src/sim/kinematics.js`（零渲染依赖），`npm test` 直接跑 `node --test` 断言上下止点、链条包络闭合、转向定长约束等。
+
+性能：链条（213 实例）走 `InstancedMesh`、车架桁架 45 件合并为 1 次绘制，全场景约 166 Mesh + 2 InstancedMesh；弱 GPU（含核显）下后期链持续低于 24fps 会自动降级为直接渲染。

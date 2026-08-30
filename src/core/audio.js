@@ -51,7 +51,7 @@ function buildChain() {
   osc1.start();
   osc2.start();
   noise.start();
-  return { master, filter, osc1, osc2 };
+  return { master, filter, osc1, osc2, noise };
 }
 
 export function updateEngineAudio({ on, cranking, rpm, throttle, muted }) {
@@ -63,17 +63,26 @@ export function updateEngineAudio({ on, cranking, rpm, throttle, muted }) {
   if (!nodes) nodes = buildChain();
 
   const effRpm = cranking ? Math.max(rpm, 400) : rpm;
-  const freq = (effRpm / 60) * 1.0; // 单缸二冲程：每转一响
+  // 基频 = 二冲程每转一点火（rpm/60），但 30Hz 的次声波听不见：
+  // 抬 4 次谐波当主音域（120~920Hz），半频方波垫低频厚度，才是能听的"突突"声
+  const freq = (effRpm / 60) * 4;
   nodes.osc1.frequency.setTargetAtTime(freq, ctx.currentTime, 0.03);
   nodes.osc2.frequency.setTargetAtTime(freq * 0.5, ctx.currentTime, 0.03);
-  nodes.filter.frequency.setTargetAtTime(300 + throttle * 2600 + effRpm * 0.06, ctx.currentTime, 0.05);
+  nodes.filter.frequency.setTargetAtTime(600 + throttle * 2600 + effRpm * 0.06, ctx.currentTime, 0.05);
   const vol = cranking ? 0.05 : 0.045 + throttle * 0.075;
   nodes.master.gain.setTargetAtTime(vol, ctx.currentTime, 0.06);
 }
 
 export function disposeEngineAudio() {
   if (nodes) {
+    for (const n of [nodes.osc1, nodes.osc2, nodes.noise]) {
+      try { n.stop(); } catch { /* noop */ }
+    }
     try { nodes.master.disconnect(); } catch { /* noop */ }
     nodes = null;
+  }
+  if (ctx) {
+    try { ctx.close(); } catch { /* noop */ }
+    ctx = null;
   }
 }

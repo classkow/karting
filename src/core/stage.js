@@ -30,11 +30,12 @@ export function createStage(canvas) {
   controls.maxPolarAngle = Math.PI / 2 - 0.02;
   controls.autoRotateSpeed = 0.9;
 
-  // 环境光照（IBL）：金属与车漆质感的来源
+  // 环境光照用完即弃：IBL 贴图和 PMREM 资源不留 GPU 里
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envScene = new RoomEnvironment();
   scene.environment = pmrem.fromScene(envScene, 0.04).texture;
   scene.environmentIntensity = 0.65;
+  envScene.dispose();
   pmrem.dispose();
 
   // 三点布光：暖主光（投影）/ 冷辅光 / 逆光轮廓

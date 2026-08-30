@@ -735,6 +735,12 @@ input[type='range']::-moz-range-thumb {
   padding: 0 4px;
   font-size: 10.5px;
 }
+/* 触屏设备显示手势提示，隐藏鼠标/快捷键文案（OrbitControls 自带双指捏合缩放） */
+.hint-touch { display: none; }
+@media (pointer: coarse) {
+  #hint .hint-mouse { display: none; }
+  #hint .hint-touch { display: inline; }
+}
 
 /* ————— 帮助弹窗 ————— */
 
@@ -901,5 +907,16 @@ input[type='range']::-moz-range-thumb {
   }
   .brand-tx span {
     display: none;
+  }
+}
+
+/* 触屏小屏恰恰需要手势提示：在 (pointer: coarse) 下放行 #hint 并收紧排版 */
+@media (max-width: 880px) and (pointer: coarse) {
+  #hint {
+    display: block;
+    bottom: 6px;
+    max-width: calc(100vw - 24px);
+    white-space: normal;
+    text-align: center;
   }
 }
