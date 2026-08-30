@@ -1,8 +1,12 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { chainPath } from '../sim/kinematics.js';
 
 // ————— 几何构建工具 —————
 
 export const UP = new THREE.Vector3(0, 1, 0);
+// 链条包络为纯数学，单一事实来源在 sim/kinematics.js（可脱离渲染做单元测试）；此处 re-export 兼容旧引用
+export { chainPath };
 
 export function mesh(geo, mat, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, mat);
@@ -34,22 +38,39 @@ export function lathe(profile, segments = 48) {
 }
 
 // 空间桁架：nodes + edges → 圆管 + 节点球（模拟焊点）
+// 单一材质、整体注册为一个部件 → 焊接后合并成 1 个 draw call（45 件 → 1 件）
 export function frameTubes(nodes, edges, radius, mat, radial = 14) {
-  const g = new THREE.Group();
+  const geos = [];
   const P = nodes.map((n) => new THREE.Vector3(...n));
-  for (const [i, j] of edges) g.add(cylBetween(P[i], P[j], radius, mat, radial));
+  const tmp = new THREE.Object3D();
+  for (const [i, j] of edges) {
+    const len = P[i].distanceTo(P[j]);
+    const g = new THREE.CylinderGeometry(radius, radius, len, radial);
+    tmp.position.copy(P[i]).add(P[j]).multiplyScalar(0.5);
+    tmp.quaternion.setFromUnitVectors(UP, _dir.copy(P[j]).sub(P[i]).normalize());
+    tmp.updateMatrix();
+    g.applyMatrix4(tmp.matrix);
+    geos.push(g);
+  }
   const jointGeo = new THREE.SphereGeometry(radius * 1.18, radial, radial / 2);
   const seen = new Set();
   for (const [i, j] of edges) {
     for (const k of [i, j]) {
       if (seen.has(k)) continue;
       seen.add(k);
-      const s = new THREE.Mesh(jointGeo, mat);
-      s.position.copy(P[k]);
-      g.add(s);
+      const g = jointGeo.clone();
+      g.translate(P[k].x, P[k].y, P[k].z);
+      geos.push(g);
     }
   }
-  return g;
+  jointGeo.dispose();
+  const merged = mergeGeometries(geos, false);
+  for (const g of geos) g.dispose();
+  const m = new THREE.Mesh(merged, mat);
+  m.name = 'frame-tubes';
+  const grp = new THREE.Group();
+  grp.add(m);
+  return grp;
 }
 
 // 链轮 / 齿轮：真实齿形（根部圆弧 + 齿顶圆弧），带轴孔与减重孔
@@ -162,52 +183,5 @@ export function taperByAxis(geo, lengthAxis, widthAxis, from, to) {
   return geo;
 }
 
-// 链条包络：两圆（轴线沿 x，位于 y-z 平面）之间的闭合路径
-// c1 = 曲轴小链轮（z, y, r），c2 = 后轴大链轮
-export function chainPath(c1, c2) {
-  const dz = c2.z - c1.z;
-  const dy = c2.y - c1.y;
-  const dist = Math.hypot(dz, dy);
-  const phi = Math.atan2(dy, dz);
-  const alpha = Math.acos((c2.r - c1.r) / dist);
-  const aS1 = phi + alpha;   // 小轮上切点角
-  const aS2 = phi - alpha;
-  const spanS = ((aS2 - aS1) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-  const aL1 = aS1 + Math.PI;
-  const aL2 = aS2 + Math.PI;
-  const spanL = ((aL2 - aL1) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-  const segLen = Math.hypot(
-    c2.z + c2.r * Math.cos(aL1) - (c1.z + c1.r * Math.cos(aS1)),
-    c2.y + c2.r * Math.sin(aL1) - (c1.y + c1.r * Math.sin(aS1))
-  );
-  const total = segLen + c2.r * spanL + segLen + c1.r * spanS;
+// （链条包络已迁至 sim/kinematics.js，本文件顶部 re-export）
 
-  function pointAt(sIn) {
-    let s = ((sIn % total) + total) % total;
-    if (s < segLen) {
-      const t = s / segLen;
-      return {
-        z: c1.z + c1.r * Math.cos(aS1) + t * (c2.z + c2.r * Math.cos(aL1) - c1.z - c1.r * Math.cos(aS1)),
-        y: c1.y + c1.r * Math.sin(aS1) + t * (c2.y + c2.r * Math.sin(aL1) - c1.y - c1.r * Math.sin(aS1)),
-      };
-    }
-    s -= segLen;
-    if (s < c2.r * spanL) {
-      const a = aL1 + s / c2.r;
-      return { z: c2.z + c2.r * Math.cos(a), y: c2.y + c2.r * Math.sin(a) };
-    }
-    s -= c2.r * spanL;
-    if (s < segLen) {
-      const t = s / segLen;
-      return {
-        z: c2.z + c2.r * Math.cos(aL2) + t * (c1.z + c1.r * Math.cos(aS2) - c2.z - c2.r * Math.cos(aL2)),
-        y: c2.y + c2.r * Math.sin(aL2) + t * (c1.y + c1.r * Math.sin(aS2) - c2.y - c2.r * Math.sin(aL2)),
-      };
-    }
-    s -= segLen;
-    const a = aS2 + s / c1.r;
-    return { z: c1.z + c1.r * Math.cos(a), y: c1.y + c1.r * Math.sin(a) };
-  }
-
-  return { total, pointAt };
-}
