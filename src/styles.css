@@ -165,7 +165,7 @@ button {
   border: 1px solid var(--stroke);
   border-radius: var(--r-lg);
   backdrop-filter: var(--blur);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   z-index: 20;
 }
 
@@ -425,6 +425,11 @@ input[type='range']::-webkit-slider-thumb {
   background: #f2f6fa;
   border: 3px solid var(--panel-solid);
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+  transition: transform 0.12s;
+}
+
+input[type='range']:hover::-webkit-slider-thumb {
+  transform: scale(1.18);
 }
 
 input[type='range']::-moz-range-thumb {
@@ -458,6 +463,22 @@ input[type='range']::-moz-range-thumb {
 .engine-btn.on {
   border-color: rgba(255, 93, 93, 0.55);
   background: rgba(255, 93, 93, 0.08);
+}
+
+/* 起动机拖转时的脉冲提示 */
+.engine-btn.starting {
+  border-color: rgba(255, 181, 71, 0.6);
+  animation: crank-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes crank-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 181, 71, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 181, 71, 0.16);
+  }
 }
 
 .eb-ic {
@@ -578,6 +599,16 @@ input[type='range']::-moz-range-thumb {
   width: 100%;
 }
 
+/* 键盘焦点可见性（无障碍） */
+button:focus-visible,
+.sys-head:focus-visible,
+.part-row:focus-visible,
+input[type='range']:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
 /* ————— 信息卡 ————— */
 
 #info-card {
@@ -588,6 +619,7 @@ input[type='range']::-moz-range-thumb {
   padding: 14px 17px 15px;
   background: var(--panel);
   border: 1px solid var(--stroke);
+  border-top: 2px solid var(--sys-c, var(--accent)); /* 系统色标识条 */
   border-radius: var(--r-lg);
   backdrop-filter: var(--blur);
   box-shadow: var(--shadow);
@@ -918,5 +950,56 @@ input[type='range']::-moz-range-thumb {
     max-width: calc(100vw - 24px);
     white-space: normal;
     text-align: center;
+  }
+}
+
+/* ————— 帮助弹窗：触屏手势（与快捷键互斥显示）————— */
+
+.help-touch {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .help-kb {
+    display: none;
+  }
+  .help-touch {
+    display: grid;
+  }
+}
+
+/* ————— 小屏面板折叠（点面板头收起，把视野让给模型）————— */
+
+@media (max-width: 880px) {
+  #parts-panel .panel-head,
+  #control-panel .panel-head {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  #parts-panel .panel-head::after,
+  #control-panel .panel-head::after {
+    content: '';
+    margin-left: 8px;
+    width: 7px;
+    height: 7px;
+    border-right: 1.6px solid var(--faint);
+    border-bottom: 1.6px solid var(--faint);
+    transform: rotate(45deg) translateY(-1px);
+    transition: transform 0.2s;
+  }
+
+  #parts-panel.panel-collapsed .panel-head::after,
+  #control-panel.panel-collapsed .panel-head::after {
+    transform: rotate(-135deg);
+  }
+
+  #parts-panel.panel-collapsed {
+    bottom: auto;
+  }
+
+  #parts-panel.panel-collapsed #parts-list,
+  #control-panel.panel-collapsed > *:not(.panel-head) {
+    display: none;
   }
 }

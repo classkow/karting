@@ -101,24 +101,38 @@ function tachSVG() {
     const [x0, y0] = pt(v, R - (major ? 14 : 8));
     const [x1, y1] = pt(v, R - 2);
     ticks += `<line x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"
-      stroke="${i >= 13 ? '#ff5d5d' : '#8fa0b4'}" stroke-width="${major ? 2.2 : 1.2}"/>`;
+      stroke="${i >= 13 ? '#ff8484' : '#566478'}" stroke-width="${major ? 2.2 : 1.2}"/>`;
     if (major) {
       const [lx, ly] = pt(v, R - 27);
-      ticks += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" fill="${i >= 13 ? '#ff8484' : '#aebccb'}"
-        font-size="12.5" font-weight="600" text-anchor="middle">${i}</text>`;
+      ticks += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" fill="${i >= 13 ? '#ff8484' : '#9fb0c3'}"
+        font-size="12" font-weight="600" text-anchor="middle">${i}</text>`;
     }
   }
   return `
-    <svg id="tach" viewBox="0 0 260 152">
-      <path d="${arcPath(0, 1, R)}" stroke="#232b36" stroke-width="9" fill="none" stroke-linecap="round"/>
-      <path d="${arcPath(13 / 14, 1, R)}" stroke="#ff5d5d55" stroke-width="9" fill="none"/>
+    <svg id="tach" viewBox="0 0 260 156">
+      <defs>
+        <linearGradient id="tach-arc" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stop-color="#3d4b5f"/>
+          <stop offset="55%" stop-color="#ffb547"/>
+          <stop offset="100%" stop-color="#ff5d5d"/>
+        </linearGradient>
+        <filter id="needle-glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="2.4" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <circle cx="${cx}" cy="${cy}" r="${R + 16}" fill="rgba(255,255,255,0.015)"/>
+      <path d="${arcPath(0, 1, R)}" stroke="#1d2530" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <path d="${arcPath(0, 1, R)}" stroke="url(#tach-arc)" stroke-width="10" fill="none" stroke-linecap="round" opacity="0.34"/>
+      <path d="${arcPath(13 / 14, 1, R)}" stroke="#ff5d5d" stroke-width="10" fill="none" opacity="0.55"/>
       ${ticks}
       <g id="needle" transform="rotate(-120 ${cx} ${cy})">
-        <path d="M ${cx - 3} ${cy} L ${cx} ${cy - R + 18} L ${cx + 3} ${cy} Z" fill="#ffb547"/>
+        <path d="M ${cx - 3} ${cy} L ${cx} ${cy - R + 18} L ${cx + 3} ${cy} Z" fill="#ffb547" filter="url(#needle-glow)"/>
       </g>
-      <circle cx="${cx}" cy="${cy}" r="7" fill="#1a2029" stroke="#39434f" stroke-width="2"/>
-      <text id="tach-rpm" x="${cx}" y="${cy + 30}" fill="#f2f6fa" font-size="21" font-weight="700" text-anchor="middle" font-family="Consolas, monospace">0</text>
-      <text x="${cx}" y="${cy + 46}" fill="#66788c" font-size="10.5" text-anchor="middle" letter-spacing="2">RPM ×1000</text>
+      <circle cx="${cx}" cy="${cy}" r="8" fill="#171d26" stroke="#3d4b5f" stroke-width="1.5"/>
+      <circle cx="${cx}" cy="${cy}" r="2.6" fill="#ffb547"/>
+      <text id="tach-rpm" x="${cx}" y="${cy + 34}" fill="#f2f6fa" font-size="21" font-weight="700" text-anchor="middle" font-family="Consolas, 'JetBrains Mono', monospace">0</text>
+      <text x="${cx}" y="${cy + 49}" fill="#5c6b7d" font-size="10" text-anchor="middle" letter-spacing="2.5">RPM ×1000</text>
     </svg>
   `;
 }
@@ -219,6 +233,7 @@ export function initControlPanel(container, api) {
 
   function setEngineUI(on, cranking) {
     btnEngine.classList.toggle('on', on || cranking);
+    btnEngine.classList.toggle('starting', cranking && !on);
     btnEngine.querySelector('.eb-ic').innerHTML = icon(on ? 'stop' : 'play', 16);
     btnEngine.querySelector('b').textContent = on ? '熄火' : cranking ? '起动中…' : '启动发动机';
     $('#engine-sub').textContent = on ? '发动机运转中 · 观察剖视缸内活塞' : cranking ? '起动机拖转中…' : '起动机拖转后怠速运行';
@@ -284,6 +299,7 @@ export function initInfoCard(container, { onFocus }) {
         return;
       }
       const sys = systemMeta(part.system);
+      container.style.setProperty('--sys-c', sys.color);
       const specs = (part.specs ?? [])
         .map(([k, v]) => `<div class="spec"><span>${k}</span><b>${v}</b></div>`)
         .join('');
@@ -338,11 +354,20 @@ export function initHelp(overlay) {
     ['1 – 8', '切换视角预设'],
     ['Esc', '关闭信息卡 / 弹窗'],
   ];
+  const TOUCHES = [
+    ['单指拖拽', '旋转视角'],
+    ['双指捏合', '缩放'],
+    ['双指拖拽', '平移'],
+    ['点按部件', '查看原理讲解'],
+  ];
   overlay.innerHTML = `
     <div class="help-card">
       <div class="help-head"><b>操作指南</b><button id="help-close" class="ghost sm">${icon('close', 13)}</button></div>
-      <div class="help-grid">
+      <div class="help-grid help-kb">
         ${SHORTCUTS.map(([k, v]) => `<div class="hk"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}
+      </div>
+      <div class="help-grid help-touch">
+        ${TOUCHES.map(([k, v]) => `<div class="hk"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}
       </div>
       <div class="help-tips">
         <p><b>建议路线：</b>点击「启动发动机」拉高油门，观察透明气缸内的活塞与连杆；</p>
@@ -356,4 +381,20 @@ export function initHelp(overlay) {
     if (e.target === overlay || e.target.closest('#help-close')) show(false);
   });
   return { toggle: () => show(overlay.classList.contains('hidden')), show };
+}
+
+// ————— 小屏面板折叠（≤880px 时点头栏收起/展开，把视野让给模型）—————
+export function initPanelCollapse() {
+  const mq = window.matchMedia('(max-width: 880px)');
+  for (const sel of ['#parts-panel', '#control-panel']) {
+    const panel = document.querySelector(sel);
+    const head = panel?.querySelector('.panel-head');
+    if (!panel || !head) continue;
+    head.addEventListener('click', () => {
+      if (mq.matches) panel.classList.toggle('panel-collapsed');
+    });
+    const apply = () => panel.classList.toggle('panel-collapsed', mq.matches);
+    apply();
+    mq.addEventListener?.('change', apply);
+  }
 }

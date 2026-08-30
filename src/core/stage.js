@@ -12,11 +12,11 @@ export function createStage(canvas) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = 1.07;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0a0e15, 0.05);
+  scene.fog = new THREE.FogExp2(0x0a0e15, 0.044);
 
   const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 80);
   camera.position.set(4.3, 2.0, 4.4); // 开场从远处推进（首帧即可看清整车）
@@ -94,6 +94,15 @@ export function createStage(canvas) {
   platform.position.y = -0.001;
   platform.receiveShadow = true;
   scene.add(platform);
+
+  // 地台边缘一圈克制的琥珀光圈（经 Bloom 微微发光，收束视觉焦点）
+  const rimGlow = new THREE.Mesh(
+    new THREE.TorusGeometry(1.44, 0.0035, 8, 96),
+    new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.32, fog: false })
+  );
+  rimGlow.rotation.x = Math.PI / 2;
+  rimGlow.position.y = 0.0195;
+  scene.add(rimGlow);
 
   function setSize(w, h) {
     camera.aspect = w / h;

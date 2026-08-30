@@ -10,7 +10,7 @@ import { initExplode } from './interaction/explode.js';
 import { initPicking } from './interaction/picking.js';
 import { initCameraRig } from './interaction/cameraRig.js';
 import { initShortcuts } from './interaction/shortcuts.js';
-import { initPartsPanel, initControlPanel, initInfoCard, initTooltip, initHelp } from './ui/panels.js';
+import { initPartsPanel, initControlPanel, initInfoCard, initTooltip, initHelp, initPanelCollapse } from './ui/panels.js';
 
 // ————— 应用装配与主循环 —————
 // 依赖方向：app → { core, kart, sim, interaction, ui }；kart/sim 不依赖 interaction/ui。
@@ -145,6 +145,7 @@ export function createApp() {
 
   const help = initHelp(document.getElementById('help-overlay'));
   document.getElementById('btn-help').addEventListener('click', () => help.toggle());
+  initPanelCollapse();
 
   // ————— 拾取 —————
   const lastPointer = [0, 0];
