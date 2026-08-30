@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { M } from '../materials.js';
 import { cylBetween, sprocketGeometry } from '../geometry.js';
-import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
 import { chainPath } from '../../sim/kinematics.js';
 import { CRANK, CHAIN_X, CLUTCH_R } from './engine.js';
@@ -21,7 +20,7 @@ const AXLE_Z = L.rearAxleZ;
 
 const refs = {};
 
-export function buildDrivetrain(root) {
+export function buildDrivetrain(root, reg) {
   // —— 后轴 ——
   const axle = new THREE.Group();
   axle.add(
@@ -36,7 +35,7 @@ export function buildDrivetrain(root) {
   }
   root.add(axle);
   refs.axle = axle;
-  registerPart(axle, {
+  reg.registerPart(axle, {
     id: 'rear-axle', name: '后轴', system: 'drivetrain', explodeDir: [0, 1, -0.3], explodeDist: 0.65,
     specs: [['直径', 'Ø50mm 实心钢轴'], ['形式', '整体式 · 无差速器']],
     desc: '实心钢制整体后轴，左右后轮与链轮全部刚性固定在它上面——卡丁车没有差速器！过弯时内外侧后轮被迫同速旋转，多余转速只能靠轮胎滑移和车架形变消化。这正是卡丁车"甩尾过弯"特性的机械根源。',
@@ -54,7 +53,7 @@ export function buildDrivetrain(root) {
     hangers.add(bearing);
   }
   root.add(hangers);
-  registerPart(hangers, {
+  reg.registerPart(hangers, {
     id: 'bearing-hangers', name: '轴承座', system: 'drivetrain', explodeDir: [0, 0.8, -0.5], explodeDist: 0.5,
     specs: [['数量', '3 个（含链轮座）'], ['轴承', '自润滑球轴承']],
     desc: '把后轴通过滚动轴承悬挂在车架上的支座。轴承座的数量与跨度决定后轴的支撑刚度——拆掉一个轴承座后轴会变"软"，抓地特性随之改变，这是常见的快速调校手段。',
@@ -74,7 +73,7 @@ export function buildDrivetrain(root) {
   sprocket.add(sprocketHub);
   root.add(sprocket);
   refs.sprocket = sprocket;
-  registerPart(sprocket, {
+  reg.registerPart(sprocket, {
     id: 'rear-sprocket', name: '后链轮', system: 'drivetrain', explodeDir: [0.5, 0.9, -0.3], explodeDist: 0.55,
     specs: [['齿数', '66T'], ['节圆直径', 'Ø248mm']],
     desc: '固定在后轴上的大齿盘。链条把曲轴链轮（12T）的动力传到这里，减速比 = 66 ÷ 12 ≈ 5.5。想加速猛就换大后齿盘，想要极速就换小的——换齿比是卡丁车赛场最常见的"调校"。',
@@ -107,18 +106,17 @@ export function buildDrivetrain(root) {
   refs.rollers = rollers;
   refs.path = path;
   refs.pitch = pitchActual;
-  registerPart(chain, {
+  reg.registerPart(chain, {
     id: 'chain', name: '传动链条', system: 'drivetrain', explodeDir: [0.7, 0.6, 0], explodeDist: 0.55,
     specs: [['配比', '12T × 66T'], ['减速比', '5.5 : 1']],
     desc: '开式滚子链，没有壳体保护——链条状态需要每次上场前检查：过紧增加摩擦损耗并勒弯后轴，过松会跳齿甚至脱落。演示中链节沿真实的外公切线包络运行，节距与齿距严格一致：链轮每转过一个齿，链条恰好走过一节。',
   });
 
-  addUpdate((dt, s) => {
+  reg.addUpdate((dt, s) => {
     refs.axle.rotation.x += s.axleOmega * dt; // 后轴与链轮同速旋转（说明词承诺过"随轴转"）
     refs.sprocket.rotation.x += s.axleOmega * dt;
 
     // 链节沿包络路径循环，线速度 = ω·r（与链轮齿严格啮合）；实例矩阵就地刷新
-    s.chainPhase = (s.chainPhase + s.omega * CLUTCH_R * dt) % refs.path.total;
     let rollerIdx = 0;
     for (let i = 0; i < LINKS; i++) {
       const s0 = s.chainPhase + i * refs.pitch;

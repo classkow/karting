@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
 import { drilledDiscGeometry, tubeThrough, cylBetween } from '../geometry.js';
-import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
 
 // ————— 制动系统：后轴单碟盘式制动（卡丁车标准布置）—————
@@ -13,7 +12,7 @@ const AXLE_Z = L.rearAxleZ;
 
 const refs = {};
 
-export function buildBrakes(root) {
+export function buildBrakes(root, reg) {
   // —— 制动盘（周圈钻孔）——
   const disc = new THREE.Group();
   disc.position.set(DISC_X, AXLE_Y, AXLE_Z);
@@ -25,7 +24,7 @@ export function buildBrakes(root) {
   disc.add(discHub);
   root.add(disc);
   refs.disc = disc;
-  registerPart(disc, {
+  reg.registerPart(disc, {
     id: 'brake-disc', name: '后制动盘', system: 'brakes', explodeDir: [-0.6, 0.8, 0], explodeDist: 0.55,
     specs: [['直径', 'Ø196mm'], ['布置', '后轴左端 · 单碟']],
     desc: '制动盘随整个后轴一起旋转，周圈钻孔用于散热与排屑。卡丁车绝大多数级别只有这一个后碟刹——刹后轴等于同时刹住两个后轮，制动力分配天然固定，这也是卡丁车入弯前"一次刹到位"驾驶习惯的来源。',
@@ -47,7 +46,7 @@ export function buildBrakes(root) {
   caliper.add(cylBetween(new THREE.Vector3(0, -0.02, 0.03), new THREE.Vector3(0.02, -0.09, -0.03), 0.008, M.steel));
   root.add(caliper);
   refs.caliper = caliper;
-  registerPart(caliper, {
+  reg.registerPart(caliper, {
     id: 'brake-caliper', name: '制动卡钳', system: 'brakes', explodeDir: [-0.5, 1, 0.3], explodeDist: 0.55,
     specs: [['形式', '液压双活塞'], ['泵', '踏板直推主缸']],
     desc: '液压卡钳跨在制动盘外缘。踩下踏板，主缸建立油压推动卡钳内的活塞，让刹车片从两侧夹住旋转的盘面。把刹车滑块拉满，可以看到刹车片向盘面夹紧的动作。',
@@ -68,7 +67,7 @@ export function buildBrakes(root) {
   master.add(pushrod);
   refs.pushrod = pushrod;
   root.add(master);
-  registerPart(master, {
+  reg.registerPart(master, {
     id: 'master-cylinder', name: '制动主缸', system: 'brakes', explodeDir: [-0.4, 0.5, 0.7], explodeDist: 0.5,
     specs: [['原理', '帕斯卡液压放大'], ['推动', '踏板推杆']],
     desc: '液压系统的"泵"。踏板推杆压缩主缸内的刹车油建立压力，经油管传到卡钳。小踩踏力靠液压放大成几百牛的夹紧力——这是帕斯卡原理最直接的工程应用。',
@@ -80,13 +79,13 @@ export function buildBrakes(root) {
     0.0034, { tubular: 48, radial: 8, mat: M.plastic }
   );
   root.add(line);
-  registerPart(line, {
+  reg.registerPart(line, {
     id: 'brake-line', name: '刹车油管', system: 'brakes', explodeDir: [-0.5, 0.4, 0], explodeDist: 0.45,
     specs: [['介质', 'DOT4 制动液'], ['要求', '钢编防胀管']],
     desc: '主缸到卡钳的压力通道。管路若有气泡或膨胀，踏板会"发软"——所以卡丁车每次上场前都要放气检查。油管沿车架左侧走线，避开发动机与排气高温区。',
   });
 
-  addUpdate((dt, s) => {
+  reg.addUpdate((dt, s) => {
     // 制动盘随后轴旋转（说明词承诺"随轴一起旋转"）
     refs.disc.rotation.x += s.axleOmega * dt;
     // 刹车片夹紧：盘面半厚 2.25mm + 片半厚 4mm = 贴合中心距 6.25mm；

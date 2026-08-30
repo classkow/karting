@@ -67,6 +67,9 @@ export function createSim() {
     s.axleOmega = s.omega * RATIO;
     s.wheelOmega = s.axleOmega; // 后轮与后轴同转速
     s.crankAngle = (s.crankAngle + s.omega * dt) % (Math.PI * 2);
+    // 链条相位（弧长米数）在这里统一推进：链速 = 曲轴角速度 × 曲轴链轮节圆半径；
+    // pointAt 内部自行回绕，drivetrain 只读
+    s.chainPhase += s.omega * L.clutchR * dt;
 
     // 理论车速（按真实转速折算，非视觉降速值）
     s.speedKmh = s.rpm > 200 ? omegaReal * RATIO * WHEEL_R * 3.6 : 0;

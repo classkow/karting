@@ -1,4 +1,4 @@
-import { SYSTEMS, partsOfSystem, systemMeta } from '../kart/registry.js';
+import { SYSTEMS, systemMeta } from '../kart/registry.js';
 import { icon } from './icons.js';
 
 // ————— UI 面板：部件清单 / 控制台（转速表）/ 信息卡 / 工具提示 / 帮助 —————
@@ -19,12 +19,12 @@ function bindRange(input, onInput) {
 }
 
 // ————— 部件清单 —————
-export function initPartsPanel(container, { onSelect, onFocus, onHover, onToggleVis }) {
+export function initPartsPanel(container, registry, { onSelect, onFocus, onHover, onToggleVis }) {
   const list = container.querySelector('#parts-list');
   const rowEls = new Map();
 
   for (const sys of SYSTEMS) {
-    const parts = partsOfSystem(sys.id);
+    const parts = registry.partsOfSystem(sys.id);
     if (!parts.length) continue;
     const sec = document.createElement('section');
     sec.className = 'sys-sec';

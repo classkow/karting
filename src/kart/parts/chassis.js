@@ -2,12 +2,11 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
 import { frameTubes, roundedRectShape } from '../geometry.js';
-import { registerPart } from '../registry.js';
 import { L } from '../layout.js';
 
 // ————— 车架车身：管梁桁架 / 底板 / 座椅 —————
 
-export function buildChassis(root) {
+export function buildChassis(root, reg) {
   const R = 0.016; // Ø32mm 铬钼钢管
 
   // —— 管梁车架 ——
@@ -45,7 +44,7 @@ export function buildChassis(root) {
   ];
   const frame = frameTubes(N, E, R, M.frameTube);
   root.add(frame);
-  registerPart(frame, {
+  reg.registerPart(frame, {
     id: 'frame', name: '管梁车架', system: 'chassis', explodeDir: [0, 0, 0], explodeDist: 0,
     specs: [['管材', 'Ø32 × 1.8mm 铬钼钢'], ['形式', '空间桁架，无悬挂'], ['工艺', 'TIG 焊接 + 人工时效']],
     desc: '卡丁车的骨架，由铬钼钢管焊接成空间桁架。它没有悬架——车架本身的微小弹性形变就是"悬挂"：过弯时后内侧车轮会被顶得微微抬起，帮助车尾保持抓地。车架刚度是调校核心，过硬则难以入弯，过软则指向模糊。',
@@ -58,7 +57,7 @@ export function buildChassis(root) {
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, 0.048, 0.02);
   root.add(floor);
-  registerPart(floor, {
+  reg.registerPart(floor, {
     id: 'floor', name: '底盘底板', system: 'chassis', explodeDir: [0, -1, 0], explodeDist: 0.5,
     specs: [['材质', '碳纤维/铝合金复合板'], ['厚度', '约 10mm']],
     desc: '安装在车架下方的平板，与管梁共同构成底盘的刚性箱体，同时托住驾驶员的小腿与脚。它还让车底气流更平整。底板与座椅的安装角度会改变车架受载方式，也是调校手段之一。',
@@ -88,7 +87,7 @@ export function buildChassis(root) {
   seat.add(cush, back);
   seat.position.set(0, 0, L.seatZ);
   root.add(seat);
-  registerPart(seat, {
+  reg.registerPart(seat, {
     id: 'seat', name: '赛车座椅', system: 'chassis', explodeDir: [0, 1, -0.2], explodeDist: 0.85,
     specs: [['材质', '玻璃钢 / 碳纤维'], ['安装', '硬连接，无减振']],
     desc: '玻璃钢桶形座椅，直接螺栓固定在车架上，中间没有一层橡胶垫。座椅的软硬与安装孔位直接决定车架的受力与形变——换一个座椅安装位置，过弯特性就会不同，所以座椅位置是卡丁车最重要的调校项目。',

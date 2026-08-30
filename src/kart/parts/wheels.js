@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { M } from '../materials.js';
 import { lathe } from '../geometry.js';
-import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
 
 // ————— 车轮：车床曲线轮胎 + 镁铝合金轮毂 —————
@@ -69,7 +68,7 @@ export function buildWheel(r, w, bolts = 3) {
   return g;
 }
 
-export function buildWheels(root) {
+export function buildWheels(root, reg) {
   // 后轮（与后轴刚性连接，随轴转动；前轮挂在转向节上，见 steering.js）
   const { wheelR } = L;
   const rl = buildWheel(wheelR.r, wheelR.w, 4);
@@ -78,25 +77,25 @@ export function buildWheels(root) {
   rr.position.set(L.rearTrack, wheelR.r, L.rearAxleZ);
   root.add(rl, rr);
   const rears = [rl, rr];
-  registerPart(rl, {
+  reg.registerPart(rl, {
     id: 'wheel-rl', name: '左后轮', system: 'wheels', explodeDir: [-1, 0.1, 0], explodeDist: 0.6,
     specs: [['规格', '7.1 × 5 光头胎'], ['驱动', '与后轴刚性连接']],
     desc: '后轮通过花键轮毂紧固在后轴上，是真正的驱动轮。宽胎面提供驱动所需的接地面积。由于左右后轮被同一根轴锁死，过弯时内侧后轮必须边滑边滚。',
   });
-  registerPart(rr, {
+  reg.registerPart(rr, {
     id: 'wheel-rr', name: '右后轮', system: 'wheels', explodeDir: [1, 0.1, 0], explodeDist: 0.6,
     specs: [['规格', '7.1 × 5 光头胎'], ['驱动', '与后轴刚性连接']],
     desc: '后轮是驱动轮，胎宽明显大于前轮。卡丁车用无花纹的光头胎，依靠橡胶配方在工作温度下软化产生抓地力——冷胎时反而非常滑，所以上场前都要"热胎"。',
   });
 
-  addUpdate((dt, s) => {
+  reg.addUpdate((dt, s) => {
     for (const w of rears) w.rotation.x += s.wheelOmega * dt;
   });
 }
 
 // 供转向节复用：前轮随车速滚动（绕自身 x 轴自转）
-export function addRolling(wheel, getOmega) {
-  addUpdate((dt, s) => {
+export function addRolling(reg, wheel, getOmega) {
+  reg.addUpdate((dt, s) => {
     wheel.rotation.x += (getOmega ? getOmega(s) : s.wheelOmega) * dt;
   });
 }

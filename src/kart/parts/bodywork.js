@@ -1,13 +1,12 @@
 import * as THREE from 'three';
 import { M } from '../materials.js';
 import { tubeThrough, roundedRectShape, taperByAxis, cylBetween } from '../geometry.js';
-import { registerPart } from '../registry.js';
 import { numberPlate } from '../../core/textures.js';
 import { L } from '../layout.js';
 
 // ————— 车身覆盖件：整流罩 / 号码牌 / 侧箱 / 前后保险杠 —————
 
-export function buildBodywork(root) {
+export function buildBodywork(root, reg) {
   // —— 车头整流罩（向车头收窄的流线罩）——
   const nose = new THREE.Group();
   const shape = new THREE.Shape();
@@ -40,7 +39,7 @@ export function buildBodywork(root) {
     nose.add(plate);
   }
   root.add(nose);
-  registerPart(nose, {
+  reg.registerPart(nose, {
     id: 'nose', name: '车头整流罩', system: 'chassis', explodeDir: [0, 0.15, 1], explodeDist: 0.85,
     specs: [['材质', 'ABS / 玻纤增强塑料'], ['固定', '快拆扎带']],
     desc: '车头的流线型导流罩，把迎面气流导向驾驶员两侧，降低风阻，并在碰撞中保护腿部与前保险杠之后的结构。比赛规则对整流罩尺寸有严格限制，它必须能在碰撞中脱落以吸收能量。',
@@ -59,7 +58,7 @@ export function buildBodywork(root) {
     cylBetween(new THREE.Vector3(0.20, 0.115, 0.76), new THREE.Vector3(0.29, 0.10, 0.60), 0.012, M.plastic)
   );
   root.add(bumperF);
-  registerPart(bumperF, {
+  reg.registerPart(bumperF, {
     id: 'bumper-front', name: '前保险杠', system: 'chassis', explodeDir: [0, 0, 1], explodeDist: 0.7,
     specs: [['材质', 'HDPE 塑料'], ['功能', '碰撞缓冲']],
     desc: '车头最前方的塑料护杠。卡丁车是可以近距离肉搏的赛车，前杠就是第一道防线：它吸收碰撞能量、保护车架和驾驶员双脚。规则要求它在受到撞击时能整体后移卸力。',
@@ -77,7 +76,7 @@ export function buildBodywork(root) {
     cylBetween(new THREE.Vector3(0.44, 0.13, -0.66), new THREE.Vector3(0.315, 0.11, -0.53), 0.013, M.plastic)
   );
   root.add(bumperR);
-  registerPart(bumperR, {
+  reg.registerPart(bumperR, {
     id: 'bumper-rear', name: '后保险杠', system: 'chassis', explodeDir: [0, 0.2, -1], explodeDist: 0.7,
     specs: [['材质', 'HDPE 塑料'], ['功能', '防止钻撞后轮']],
     desc: '车尾的全宽护杠，最重要的作用是防止后车"钻撞"——前车头钻入你的后轮会直接把车弹翻。后杠把追尾载荷导向车架纵梁，是安全规则重点检查的部件。',
@@ -94,7 +93,7 @@ export function buildBodywork(root) {
     pods.add(pod);
   }
   root.add(pods);
-  registerPart(pods, {
+  reg.registerPart(pods, {
     id: 'sidepods', name: '侧箱', system: 'chassis', explodeDir: [1, 0.1, 0], explodeDist: 0.75,
     specs: [['材质', 'ABS / 玻纤增强塑料'], ['位置', '座椅两侧']],
     desc: '座椅两侧的塑料护板，保护驾驶员肋部不被别车的车轮碰到，同时梳理流经车身侧面的气流。侧箱由快拆扎带固定，赛后拆下即可完整看到车架侧面。',

@@ -1,19 +1,18 @@
 import * as THREE from 'three';
-import { getPart } from '../kart/registry.js';
 
 // ————— 部件拾取：射线拾取 + 描边高亮（由后期链的 OutlinePass 渲染）—————
 // hover：淡蓝细描边 + 浮动标签；select：琥珀描边 + 信息卡。
 // 性能：悬停射线经 rAF 节流（每帧至多一次），且跳过 InstancedMesh——链条 250+
 // 实例逐个求交成本高，链条改从部件清单聚焦/高亮。
 
-export function initPicking({ canvas, camera, kartRoot, hoverPass, selectPass, onHover, onSelect }) {
+export function initPicking({ canvas, camera, kartRoot, registry, hoverPass, selectPass, onHover, onSelect }) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let hovered = null;
 
   function select(id) {
-    selectPass.selectedObjects = id ? [getPart(id).group] : [];
-    onSelect?.(id ? getPart(id) : null);
+    selectPass.selectedObjects = id ? [registry.getPart(id).group] : [];
+    onSelect?.(id ? registry.getPart(id) : null);
   }
 
   const meshToPart = new Map();
@@ -30,7 +29,7 @@ export function initPicking({ canvas, camera, kartRoot, hoverPass, selectPass, o
   });
 
   function partVisible(id) {
-    const part = getPart(id);
+    const part = registry.getPart(id);
     return part ? part.visible : false;
   }
 
@@ -49,7 +48,7 @@ export function initPicking({ canvas, camera, kartRoot, hoverPass, selectPass, o
 
   function setHover(id, x, y) {
     hovered = id;
-    hoverPass.selectedObjects = id ? [getPart(id).group] : [];
+    hoverPass.selectedObjects = id ? [registry.getPart(id).group] : [];
     canvas.style.cursor = id ? 'pointer' : 'grab';
     onHover?.(id, x, y);
   }
@@ -94,7 +93,7 @@ export function initPicking({ canvas, camera, kartRoot, hoverPass, selectPass, o
     setHoverExternal(id) {
       // 清单行悬停时高亮 3D 部件（不显示光标标签）；离开后恢复画布内的悬停高亮
       const pid = (id && partVisible(id) ? id : null) ?? hovered;
-      hoverPass.selectedObjects = pid ? [getPart(pid).group] : [];
+      hoverPass.selectedObjects = pid ? [registry.getPart(pid).group] : [];
     },
   };
 }

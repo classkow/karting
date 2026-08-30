@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
 import { mesh, lathe, tubeThrough, sprocketGeometry, cylBetween } from '../geometry.js';
-import { registerPart, addUpdate, explodeOffset } from '../registry.js';
 import { L } from '../layout.js';
 import { pistonStroke as strokeFn } from '../../sim/kinematics.js';
 
@@ -24,9 +23,8 @@ export function pistonStroke(theta) {
 const refs = {};
 const _pin = new THREE.Vector3();
 const _pistonPin = new THREE.Vector3();
-const _off = new THREE.Vector3();
 
-export function buildEngine(root, asm) {
+export function buildEngine(root, asm, reg) {
   const { x, y, z } = CRANK;
 
   // —— 曲轴箱 + 缸筒散热片 ——
@@ -62,7 +60,7 @@ export function buildEngine(root, asm) {
   mountPlate.position.set(x + 0.03, y - 0.052, z - 0.02);
   block.add(mountPlate);
   asm.add(block);
-  registerPart(block, {
+  reg.registerPart(block, {
     id: 'engine-block', name: '缸体与曲轴箱', system: 'engine', explodeDir: [0.7, 0.7, 0], explodeDist: 0.65,
     specs: [['形式', '二冲程 · 风冷单缸'], ['排量', '125cc'], ['散热', '缸筒散热片']],
     desc: '发动机本体：下部是曲轴箱（内含曲轴，其箱体容积还兼作扫气泵），上部环形薄片是散热片——风冷二冲程靠它把缸壁热量散给迎面气流。发动机通过安装板刚性吊在车架右侧，是卡丁车后部的重要受力构件。',
@@ -74,7 +72,7 @@ export function buildEngine(root, asm) {
   liner.rotation.x = Math.PI / 2;
   liner.position.set(x, y, z + 0.135);
   asm.add(liner);
-  registerPart(liner, {
+  reg.registerPart(liner, {
     id: 'cylinder', name: '气缸（透明剖视）', system: 'engine', explodeDir: [0.7, 0.8, 0.2], explodeDist: 0.8,
     specs: [['缸径 × 行程', 'Ø54 × 54.5mm'], ['特殊', '剖视可见活塞']],
     desc: '这里用透明缸套做剖视，可以直接看到活塞往复。二冲程发动机没有气门凸轮机构：活塞下行时先打开缸壁上的排气口、再打开扫气口，曲轴箱里预压缩的新鲜混合气涌进气缸完成换气——曲轴每转一圈就做功一次，这是它升功率高、嗓音尖锐的原因。',
@@ -95,9 +93,10 @@ export function buildEngine(root, asm) {
   piston.add(wristPin);
   const PISTON_BASE = z + pistonStroke(0); // 下止点位置为基准
   piston.position.set(x, y, PISTON_BASE);
+  piston.userData.mechPos = new THREE.Vector3(x, y, PISTON_BASE); // 动态件：机构位姿
   asm.add(piston);
   refs.piston = piston;
-  registerPart(piston, {
+  reg.registerPart(piston, {
     id: 'piston', name: '活塞', system: 'engine', explodeDir: [0.7, 1, 0.3], explodeDist: 1.0,
     specs: [['运动', '直线往复'], ['密封', '两道活塞环']],
     desc: '燃烧压力推动活塞沿气缸做直线运动。活塞位移由曲轴转角唯一决定：s = R·sinθ + √(L² − R²cos²θ)，这正是"曲柄滑块机构"的标准解。侧向分力由缸壁承担，所以活塞裙部做得较长。',
@@ -117,9 +116,10 @@ export function buildEngine(root, asm) {
   smallEnd.position.z = 1;
   rod.add(smallEnd);
   rod.scale.z = ROD_LEN;
+  rod.userData.mechPos = new THREE.Vector3(x, y, z + ROD_LEN / 2);
   asm.add(rod);
   refs.rod = rod;
-  registerPart(rod, {
+  reg.registerPart(rod, {
     id: 'conrod', name: '连杆', system: 'engine', explodeDir: [0.7, 1, 0], explodeDist: 0.9,
     specs: [['中心距', '105mm'], ['大头', '整体式滚针轴承']],
     desc: '连接活塞销与曲柄销的传力杆。仔细观察它的运动：两端各走一段圆弧，杆身本身做平面复合运动——这种"一边摆一边平移"的姿态正是四连杆机构的魅力。二冲程连杆大头常用整体式滚针轴承，没有分开式连杆盖。',
@@ -159,7 +159,7 @@ export function buildEngine(root, asm) {
   crank.add(stub);
   asm.add(crank);
   refs.crank = crank;
-  registerPart(crank, {
+  reg.registerPart(crank, {
     id: 'crankshaft', name: '曲轴', system: 'engine', explodeDir: [0.7, 0.8, -0.3], explodeDist: 0.75,
     specs: [['最高转速', '14000+ rpm'], ['支撑', '两端滚珠轴承']],
     desc: '发动机的输出轴。两片曲柄夹着偏心的曲柄销，销随主轴公转，通过连杆带动活塞往复；对侧的扇形配重抵消往复惯性力。注意曲轴轴线与后轴平行——动力沿轴向经链轮传向后轴，这是卡丁车传动布置的基础。',
@@ -183,7 +183,7 @@ export function buildEngine(root, asm) {
   }
   asm.add(flywheel);
   refs.flywheel = flywheel;
-  registerPart(flywheel, {
+  reg.registerPart(flywheel, {
     id: 'flywheel', name: '飞轮（磁电机）', system: 'engine', explodeDir: [-0.5, 0.8, 0], explodeDist: 0.7,
     specs: [['功能', '储能 + 点火供电'], ['位置', '曲轴左端']],
     desc: '曲轴另一端的大惯量圆盘。单缸机每转只做功一次，飞轮靠转动惯量把"间歇爆发"抹成"连续旋转"。外缘嵌有磁钢，旋转时对定子线圈供电——它同时是点火系统的发电机。',
@@ -205,7 +205,7 @@ export function buildEngine(root, asm) {
   clutch.add(spr);
   asm.add(clutch);
   refs.clutch = clutch;
-  registerPart(clutch, {
+  reg.registerPart(clutch, {
     id: 'clutch', name: '离心离合器 + 曲轴链轮', system: 'engine', explodeDir: [0.8, 0.6, -0.4], explodeDist: 0.7,
     specs: [['接合转速', '约 4000 rpm'], ['齿数', '12T']],
     desc: '卡丁车没有离合踏板！蹄块式离心离合器装在曲轴端：转速低时蹄块被弹簧拉住空转，转速升高后蹄块被甩开压住离合器壳——超过约 4000 rpm 自动接合起步。"起步 = 给油"，这就是卡丁车的驾驶方式。',
@@ -235,7 +235,7 @@ export function buildEngine(root, asm) {
   carb.add(bowl);
   asm.add(carb);
   refs.butterfly = butterfly;
-  registerPart(carb, {
+  reg.registerPart(carb, {
     id: 'carburetor', name: '化油器', system: 'engine', explodeDir: [-0.2, 0.5, -1], explodeDist: 0.8,
     specs: [['形式', '膜片式 · 节气门可动'], ['控制', '油门拉线']],
     desc: '化油器利用气流经过文氏管时的负压把燃油吸出雾化。油门拉线控制的不是"油量"而是节气门（尾端可见的圆片）：开度越大 → 进气越多 → 吸出的油也越多 → 转速越高。盯着它能看到圆片随油门转动。',
@@ -271,14 +271,14 @@ export function buildEngine(root, asm) {
   exhaust.add(silencer);
   exhaust.add(cylBetween(new THREE.Vector3(x + 0.08, 0.28, -0.40), new THREE.Vector3(0.31, 0.115, -0.44), 0.007, M.steel));
   asm.add(exhaust);
-  registerPart(exhaust, {
+  reg.registerPart(exhaust, {
     id: 'exhaust', name: '排气膨胀室', system: 'engine', explodeDir: [1, 0.5, -0.4], explodeDist: 0.8,
     specs: [['形式', '锥形谐调膨胀室'], ['作用', '压力波泵气']],
     desc: '二冲程的排气管绝不是简单的消音管，它是一件精密乐器：扩张段让排气压力波膨胀，收敛段把反射回来的压力波在排气口关闭前推回气缸——相当于用声波给气缸"扫气充气"。二冲程的高升功率，一半功劳在它。',
   });
 
   // ————— 每帧机构更新 —————
-  addUpdate((dt, s) => {
+  reg.addUpdate((dt, s) => {
     const th = s.crankAngle;
 
     // 曲轴系旋转（explode 模块负责平移，这里只管自转）
@@ -286,19 +286,17 @@ export function buildEngine(root, asm) {
     refs.flywheel.rotation.x = th;
     refs.clutch.rotation.x = th;
 
-    // 活塞（曲柄滑块解）
+    // 活塞（曲柄滑块解）：只写机构位姿 mechPos，爆炸偏移由 explode 统一叠加
     const stroke = pistonStroke(th);
-    explodeOffset(refs.piston, _off);
-    refs.piston.position.set(x + _off.x, y + _off.y, PISTON_BASE + _off.z + stroke - pistonStroke(0));
+    refs.piston.userData.mechPos.set(x, y, z + stroke);
 
     // 连杆：曲柄销 → 活塞销（始终位于 y-z 平面内）
     _pin.set(x, y + CRANK_R * Math.cos(th), z + CRANK_R * Math.sin(th));
     _pistonPin.set(x, y, z + stroke);
-    explodeOffset(refs.rod, _off);
-    refs.rod.position.set(
-      (_pin.x + _pistonPin.x) / 2 + _off.x,
-      (_pin.y + _pistonPin.y) / 2 + _off.y,
-      (_pin.z + _pistonPin.z) / 2 + _off.z
+    refs.rod.userData.mechPos.set(
+      (_pin.x + _pistonPin.x) / 2,
+      (_pin.y + _pistonPin.y) / 2,
+      (_pin.z + _pistonPin.z) / 2
     );
     refs.rod.rotation.x = Math.atan2(_pin.y - _pistonPin.y, _pistonPin.z - _pin.z);
 

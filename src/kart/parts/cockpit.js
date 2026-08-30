@@ -2,14 +2,13 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
 import { tubeThrough, cylBetween } from '../geometry.js';
-import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
 
 // ————— 操纵与油路：踏板 / 油门拉线 / 油箱 / 燃油管 —————
 
 const refs = {};
 
-function buildPedal(id, name, x, desc, padMat, explodeDir) {
+function buildPedal(reg, id, name, x, desc, padMat, explodeDir) {
   const pivot = new THREE.Group();
   pivot.position.set(x, 0.095, 0.46);
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.11, 0.02), M.steel);
@@ -24,7 +23,7 @@ function buildPedal(id, name, x, desc, padMat, explodeDir) {
   }
   pivot.add(arm, pad);
   refs[id] = pivot;
-  registerPart(pivot, {
+  reg.registerPart(pivot, {
     id, name, system: 'cockpit', explodeDir, explodeDist: 0.5,
     specs: [['操作', '脚踩 · 铰链式']],
     desc,
@@ -32,14 +31,14 @@ function buildPedal(id, name, x, desc, padMat, explodeDir) {
   return pivot;
 }
 
-export function buildCockpit(root) {
+export function buildCockpit(root, reg) {
   buildPedal(
-    'pedal-throttle', '油门踏板', 0.13,
+    reg, 'pedal-throttle', '油门踏板', 0.13,
     '油门踏板通过钢拉线拉动化油器节气门。踩得越深，节气门开度越大、转速越高；松开由回位弹簧自动关闭。可以同时观察踏板、拉线走向和化油器里节气门的联动。',
     M.alu, [0.4, 0.4, 0.9]
   );
   buildPedal(
-    'pedal-brake', '刹车踏板', -0.13,
+    reg, 'pedal-brake', '刹车踏板', -0.13,
     '刹车踏板通过推杆直推制动主缸。卡丁车只有后刹车，且没有 ABS——重刹时后轮容易抱死侧滑，所以"直线刹完再入弯"是第一课。',
     M.paintRed, [-0.4, 0.4, 0.9]
   );
@@ -50,7 +49,7 @@ export function buildCockpit(root) {
     0.0024, { tubular: 48, radial: 6, mat: M.plastic }
   );
   root.add(cable);
-  registerPart(cable, {
+  reg.registerPart(cable, {
     id: 'throttle-cable', name: '油门拉线', system: 'cockpit', explodeDir: [0.5, 0.5, 0], explodeDist: 0.45,
     specs: [['形式', '钢丝拉索 + 回位弹簧']],
     desc: '踏板到化油器之间唯一的机械联系。拉线外套螺旋护套，内芯钢丝只拉不推——所以节气门必须有回位弹簧才能关闭。看它沿车架右侧绕开排气高温区的走线。',
@@ -70,7 +69,7 @@ export function buildCockpit(root) {
   strap.scale.set(0.8, 1.05, 1);
   tank.add(strap);
   root.add(tank);
-  registerPart(tank, {
+  reg.registerPart(tank, {
     id: 'fuel-tank', name: '油箱', system: 'cockpit', explodeDir: [0, 0.9, -0.5], explodeDist: 0.65,
     specs: [['容积', '约 8L'], ['位置', '座椅后方']],
     desc: '位于座椅后方的小油箱，靠重力向化油器供油（部分车型用脉动油泵）。卡丁车油耗惊人——竞赛级二冲程每小时要喝掉 15 升以上，一场决赛加满油刚好跑完。',
@@ -82,13 +81,13 @@ export function buildCockpit(root) {
     0.0032, { tubular: 24, radial: 6, mat: M.paintRed }
   );
   root.add(fuelLine);
-  registerPart(fuelLine, {
+  reg.registerPart(fuelLine, {
     id: 'fuel-line', name: '燃油管', system: 'cockpit', explodeDir: [0.6, 0.4, -0.3], explodeDist: 0.45,
     specs: [['介质', '汽油 + 机油混合']],
     desc: '油箱到化油器的透明燃油管。二冲程发动机没有独立润滑系统，机油直接按比例掺进汽油（约 4%），混合油经这里进入曲轴箱，雾化后顺便润滑曲轴轴承。',
   });
 
-  addUpdate((dt, s) => {
+  reg.addUpdate((dt, s) => {
     refs['pedal-throttle'].rotation.x = -s.throttle * 0.38;
     refs['pedal-brake'].rotation.x = -s.brake * 0.32;
   });
