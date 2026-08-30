@@ -4,6 +4,7 @@ import { M } from '../materials.js';
 import { mesh, lathe, tubeThrough, sprocketGeometry, cylBetween } from '../geometry.js';
 import { registerPart, addUpdate, explodeOffset } from '../registry.js';
 import { L } from '../layout.js';
+import { pistonStroke as strokeFn } from '../../sim/kinematics.js';
 
 // ————— 动力系统：二冲程单缸发动机（剖视）—————
 // 曲轴沿 x 轴（与后轴平行），活塞沿 z 轴往复 —— 标准曲柄滑块机构。
@@ -15,9 +16,9 @@ export const ROD_LEN = L.rodLen;
 export const CHAIN_X = L.chainX;
 export const CLUTCH_R = L.clutchR;
 
-// 活塞位移：s(θ) = R·sinθ + √(L² − R²·cos²θ)，θ=π/2 时到达上止点
+// 活塞位移（曲柄滑块标准解，纯数学在 sim/kinematics.js）
 export function pistonStroke(theta) {
-  return CRANK_R * Math.sin(theta) + Math.sqrt(ROD_LEN * ROD_LEN - CRANK_R * CRANK_R * Math.cos(theta) ** 2);
+  return strokeFn(theta, CRANK_R, ROD_LEN);
 }
 
 const refs = {};
