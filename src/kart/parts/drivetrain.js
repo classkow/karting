@@ -5,6 +5,12 @@ import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
 import { CRANK, CHAIN_X, CLUTCH_R } from './engine.js';
 
+const _m4 = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _pos = new THREE.Vector3();
+const _scl = new THREE.Vector3(1, 1, 1);
+const _xAxis = new THREE.Vector3(1, 0, 0);
+
 // ————— 传动系统：后轴 / 轴承座 / 后链轮 / 链条 —————
 // 开式链传动：曲轴 12T → 后轴 66T，减速比约 5.5:1，无差速器。
 
@@ -28,6 +34,7 @@ export function buildDrivetrain(root) {
     axle.add(hubSeat);
   }
   root.add(axle);
+  refs.axle = axle;
   registerPart(axle, {
     id: 'rear-axle', name: '后轴', system: 'drivetrain', explodeDir: [0, 1, -0.3], explodeDist: 0.65,
     specs: [['直径', 'Ø50mm 实心钢轴'], ['形式', '整体式 · 无差速器']],
@@ -82,29 +89,20 @@ export function buildDrivetrain(root) {
   const pitchActual = path.total / LINKS;
 
   const chain = new THREE.Group();
+  // 每节 = 2 片链板（全部实例共用 1 个 draw call）+ 内节滚子（再 1 个 draw call）
+  // 原来是 ~160 个 Group × 2-3 个 Mesh ≈ 400 个 draw call
   const plateGeo = new THREE.BoxGeometry(0.0022, 0.0085, pitchActual * 0.62);
   const rollerGeo = new THREE.CylinderGeometry(0.0038, 0.0038, 0.0068, 8);
-  const links = [];
-  for (let i = 0; i < LINKS; i++) {
-    const link = new THREE.Group();
-    const outer = i % 2 === 0;
-    const plateMat = outer ? M.chainSteel : M.steel;
-    for (const px of [-0.0068, 0.0068]) {
-      const plate = new THREE.Mesh(plateGeo, plateMat);
-      plate.position.x = px;
-      link.add(plate);
-    }
-    if (!outer) {
-      const roller = new THREE.Mesh(rollerGeo, M.chainSteel);
-      roller.rotation.x = Math.PI / 2;
-      link.add(roller);
-    }
-    chain.add(link);
-    links.push(link);
-  }
+  rollerGeo.rotateX(Math.PI / 2); // 与旧版 roller.rotation.x=π/2 等效，烘进几何
+  const plates = new THREE.InstancedMesh(plateGeo, M.chainSteel, LINKS * 2);
+  const rollers = new THREE.InstancedMesh(rollerGeo, M.steel, Math.ceil(LINKS / 2));
+  plates.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  rollers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  chain.add(plates, rollers);
   root.add(chain);
   refs.chain = chain;
-  refs.links = links;
+  refs.plates = plates;
+  refs.rollers = rollers;
   refs.path = path;
   refs.pitch = pitchActual;
   registerPart(chain, {
@@ -114,17 +112,29 @@ export function buildDrivetrain(root) {
   });
 
   addUpdate((dt, s) => {
+    refs.axle.rotation.x += s.axleOmega * dt; // 后轴与链轮同速旋转（说明词承诺过"随轴转"）
     refs.sprocket.rotation.x += s.axleOmega * dt;
 
-    // 链节沿包络路径循环，线速度 = ω·r（与链轮齿严格啮合）
+    // 链节沿包络路径循环，线速度 = ω·r（与链轮齿严格啮合）；实例矩阵就地刷新
     s.chainPhase = (s.chainPhase + s.omega * CLUTCH_R * dt) % refs.path.total;
-    for (let i = 0; i < refs.links.length; i++) {
+    let rollerIdx = 0;
+    for (let i = 0; i < LINKS; i++) {
       const s0 = s.chainPhase + i * refs.pitch;
       const p = refs.path.pointAt(s0);
       const p2 = refs.path.pointAt(s0 + refs.pitch * 0.5);
-      const link = refs.links[i];
-      link.position.set(CHAIN_X, p.y, p.z);
-      link.rotation.x = -Math.atan2(p2.y - p.y, p2.z - p.z);
+      _q.setFromAxisAngle(_xAxis, -Math.atan2(p2.y - p.y, p2.z - p.z));
+      for (const px of [-0.0068, 0.0068]) {
+        _pos.set(CHAIN_X + px, p.y, p.z);
+        _m4.compose(_pos, _q, _scl);
+        refs.plates.setMatrixAt(i * 2 + (px < 0 ? 0 : 1), _m4);
+      }
+      if (i % 2 === 1) {
+        _pos.set(CHAIN_X, p.y, p.z);
+        _m4.compose(_pos, _q, _scl);
+        refs.rollers.setMatrixAt(rollerIdx++, _m4);
+      }
     }
+    refs.plates.instanceMatrix.needsUpdate = true;
+    refs.rollers.instanceMatrix.needsUpdate = true;
   });
 }

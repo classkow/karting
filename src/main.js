@@ -41,7 +41,11 @@ const kart = buildKart();
 scene.add(kart);
 
 const explode = initExplode();
-const rig = initCameraRig(camera, controls);
+// ctrl 稍后创建（初始化顺序），用前置声明打破引用环
+let ctrl = null;
+const rig = initCameraRig(camera, controls, {
+  onStopAutoRotate: () => ctrl?.setRotateUI(false),
+});
 
 // ————— UI —————
 const tooltip = initTooltip(document.getElementById('tooltip'));
@@ -89,7 +93,7 @@ function focusTarget(part) {
 const chipEngine = document.getElementById('chip-engine');
 const chipFps = document.getElementById('chip-fps');
 
-const ctrl = initControlPanel(document.getElementById('control-panel'), {
+ctrl = initControlPanel(document.getElementById('control-panel'), {
   onThrottle(v) {
     sim.throttle = v;
     ctrl.setThrottleUI(v);
@@ -177,7 +181,10 @@ canvas.addEventListener('pointerdown', () => {
 const viewKeys = Object.keys(VIEWS);
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
+  if (e.repeat) return; // 拦下按键自动重复：按住空格不会反复启停、按住 W 油门不会秒满
   const k = e.key.toLowerCase();
+  // 焦点停在按钮等可聚焦元素上时，空格/Enter 交给浏览器合成 click，避免双触发
+  if (e.target !== document.body && (k === ' ' || e.key === 'Enter')) return;
   let handled = true;
   if (k === ' ') {
     sim.toggleEngine();
@@ -215,7 +222,10 @@ window.addEventListener('keydown', (e) => {
   if (handled) e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
-  if (e.key.toLowerCase() === 'b') sim.brakeTarget = 0;
+  if (e.key.toLowerCase() === 'b') {
+    sim.brakeTarget = 0;
+    ctrl.setBrakeUI(0); // 松键后把滑条 UI 拉回来，否则永远停在 100%
+  }
 });
 
 // ————— 主循环 —————
@@ -279,14 +289,17 @@ function loop() {
     fpsFrames = 0;
     fpsTime = 0;
   }
-  // 持续低帧率（<24fps）时自动关闭后期链，保住交互流畅度（一次性）
-  if (!fpsAutoChecked && fpsTotalTime >= 5) {
-    fpsAutoChecked = true;
-    if (usePostfx && fpsTotalFrames / fpsTotalTime < 24) {
-      usePostfx = false;
-      prefs.quality = false;
-      storage.set('kart.quality', '0');
-      ctrl.setQualityUI(false);
+  // 持续低帧率（<24fps）时自动关闭后期链，保住交互流畅度。
+  // 采样从开场 12s 后起算（避开装配/着色器编译抖动期），未达标则继续观察；
+  // 降级只作用于本次会话，不写 localStorage（不永久覆盖主公的画质偏好）
+  if (!fpsAutoChecked && fpsTotalTime >= 12) {
+    if (fpsTotalFrames / fpsTotalTime < 24) {
+      fpsAutoChecked = true;
+      if (usePostfx) {
+        usePostfx = false;
+        prefs.quality = false;
+        ctrl.setQualityUI(false);
+      }
     }
   }
 }

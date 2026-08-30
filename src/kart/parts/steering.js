@@ -3,7 +3,8 @@ import { M } from '../materials.js';
 import { mesh, cylBetween, sprocketGeometry } from '../geometry.js';
 import { registerPart, addUpdate, explodeOffset } from '../registry.js';
 import { L } from '../layout.js';
-import { buildWheel } from './wheels.js';
+import { solveSteeringAngle } from '../../sim/kinematics.js';
+import { buildWheel, addRolling } from './wheels.js';
 
 // ————— 转向系统：方向盘 → 转向柱 → 齿轮齿条 → 拉杆 → 转向节 —————
 // 拉杆与转向臂按刚性杆约束精确求解（牛顿迭代），几何永不脱节。
@@ -44,6 +45,9 @@ function buildSpindle(side) {
   const wheel = buildWheel(L.wheelF.r, L.wheelF.w);
   wheel.position.set(0, L.wheelF.r - KP_Y, 0);
   pivot.add(wheel);
+  // 纯滚动条件：轮速 = 后轴线速度 / 前轮半径（前轮直径小，转得更快）
+  const F_RATIO = L.wheelR.r / L.wheelF.r;
+  addRolling(wheel, (s) => s.wheelOmega * F_RATIO);
   const wid = side === 'L' ? 'wheel-fl' : 'wheel-fr';
   registerPart(wheel, {
     id: wid, name: side === 'L' ? '左前轮' : '右前轮', system: 'wheels',
@@ -185,23 +189,14 @@ export function buildSteering(root) {
       const rackEnd = { x: sign * RACK_HALF + disp, y: RACK_Y, z: RACK_Z };
       const rodLen = side === 'L' ? refs.rodLenL : refs.rodLenR;
 
-      // f(a) = |armEnd(a) − rackEnd|² − L²，牛顿迭代求转向角 a
-      // armEnd = pivot + Ry(a)·v，v = (−s·ARM_IN, ARM_Y, −ARM)
+      // 定长刚杆约束解转向角（牛顿迭代，纯数学在 sim/kinematics.js）
       const vx = -sign * ARM_IN;
       const vz = -ARM;
-      let a = refs['angle' + side];
-      for (let it = 0; it < 6; it++) {
-        const ex = sign * KP_X + vx * Math.cos(a) + vz * Math.sin(a);
-        const ez = KP_Z - vx * Math.sin(a) + vz * Math.cos(a);
-        const dx = ex - rackEnd.x;
-        const dy = KP_Y + ARM_Y - rackEnd.y;
-        const dz = ez - rackEnd.z;
-        const f = dx * dx + dy * dy + dz * dz - rodLen * rodLen;
-        const df = 2 * (dx * (-vx * Math.sin(a) + vz * Math.cos(a)) + dz * (-vx * Math.cos(a) - vz * Math.sin(a)));
-        if (Math.abs(df) < 1e-8) break;
-        a -= f / df;
-      }
-      a = Math.max(-0.62, Math.min(0.62, a));
+      const a = solveSteeringAngle({
+        vx, vz, armY: ARM_Y, rodLen,
+        pivot: { x: sign * KP_X, y: KP_Y, z: KP_Z },
+        rackEnd, a0: refs['angle' + side],
+      });
       refs['angle' + side] = a;
       pivot.rotation.y = a;
 

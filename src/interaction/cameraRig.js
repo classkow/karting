@@ -13,10 +13,15 @@ export const VIEWS = {
   top:     { label: '俯视', pos: [0.02, 3.4, 0.03], tgt: [0, 0, 0] },
 };
 
-export function initCameraRig(camera, controls) {
+export function initCameraRig(camera, controls, { onStopAutoRotate } = {}) {
   let tween = null;
 
   function flyTo(pos, tgt, dur = 0.9) {
+    // 自动环绕会与本补间争夺相机控制权：飞行前先停下（并同步外部按钮状态）
+    if (controls.autoRotate) {
+      controls.autoRotate = false;
+      onStopAutoRotate?.();
+    }
     tween = {
       t: 0,
       dur,

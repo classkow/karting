@@ -87,8 +87,9 @@ export function buildBrakes(root) {
   });
 
   addUpdate((dt, s) => {
-    // 刹车片夹紧：间隙 3.5mm → 0.5mm
-    const gap = 0.008 + (1 - s.brake) * 0.0035;
+    // 刹车片夹紧：盘面半厚 2.25mm + 片半厚 4mm = 贴合中心距 6.25mm；
+    // 松开时留 3.5mm 工作间隙 → 中心距 9.75mm，踩满时恰好贴盘（间隙 3.5mm → 0）
+    const gap = 0.00625 + (1 - s.brake) * 0.0035;
     refs.padIn.position.set(-gap, -0.008, 0);
     refs.padOut.position.set(gap, -0.008, 0);
     // 主缸推杆随踏板伸出
