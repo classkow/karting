@@ -1,12 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { chainPath } from '../sim/kinematics.js';
 
 // ————— 几何构建工具 —————
 
-export const UP = new THREE.Vector3(0, 1, 0);
-// 链条包络为纯数学，单一事实来源在 sim/kinematics.js（可脱离渲染做单元测试）；此处 re-export 兼容旧引用
-export { chainPath };
+const UP = new THREE.Vector3(0, 1, 0);
 
 export function mesh(geo, mat, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, mat);
@@ -148,20 +145,6 @@ export function roundedRectShape(w, h, r) {
   return s;
 }
 
-// 沿 Shape 轮廓挤出（含倒角），深度沿 +z，居中
-export function extrudeShape(shape, depth, { bevel = depth * 0.18, curveSegments = 16 } = {}) {
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: bevel > 0,
-    bevelThickness: bevel,
-    bevelSize: bevel,
-    bevelSegments: 3,
-    curveSegments,
-  });
-  geo.translate(0, 0, -depth / 2 - (bevel > 0 ? 0 : 0));
-  return geo;
-}
-
 // 按 lengthAxis 线性缩放 widthAxis（把挤出体收成锥形，用于整流罩）
 // taperByAxis(geo, 'x', 'z', 1.0, 0.45)：沿 x（长度）从 1 到 0.45 缩放 z（宽度）
 export function taperByAxis(geo, lengthAxis, widthAxis, from, to) {
@@ -182,6 +165,4 @@ export function taperByAxis(geo, lengthAxis, widthAxis, from, to) {
   geo.computeVertexNormals();
   return geo;
 }
-
-// （链条包络已迁至 sim/kinematics.js，本文件顶部 re-export）
 

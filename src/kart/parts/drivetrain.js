@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { M } from '../materials.js';
-import { mesh, cylBetween, sprocketGeometry, chainPath } from '../geometry.js';
+import { cylBetween, sprocketGeometry } from '../geometry.js';
 import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
+import { chainPath } from '../../sim/kinematics.js';
 import { CRANK, CHAIN_X, CLUTCH_R } from './engine.js';
 
 const _m4 = new THREE.Matrix4();
@@ -95,7 +96,8 @@ export function buildDrivetrain(root) {
   const rollerGeo = new THREE.CylinderGeometry(0.0038, 0.0038, 0.0068, 8);
   rollerGeo.rotateX(Math.PI / 2); // 与旧版 roller.rotation.x=π/2 等效，烘进几何
   const plates = new THREE.InstancedMesh(plateGeo, M.chainSteel, LINKS * 2);
-  const rollers = new THREE.InstancedMesh(rollerGeo, M.steel, Math.ceil(LINKS / 2));
+  // 滚子只挂在奇数链节上：floor(LINKS/2) 恰好用满，不留一个未定位的冗余实例在原点
+  const rollers = new THREE.InstancedMesh(rollerGeo, M.steel, Math.floor(LINKS / 2));
   plates.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   rollers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   chain.add(plates, rollers);
@@ -107,8 +109,8 @@ export function buildDrivetrain(root) {
   refs.pitch = pitchActual;
   registerPart(chain, {
     id: 'chain', name: '传动链条', system: 'drivetrain', explodeDir: [0.7, 0.6, 0], explodeDist: 0.55,
-    specs: [['规格', '219 特制链'], ['节距', '7.75mm']],
-    desc: '开式链传动，没有壳体保护——链条的状态需要每次上场前检查：过紧增加摩擦损耗并勒弯后轴，过松会跳齿甚至脱落。观察链条直线段：紧边绷直传力，松边微微下垂。',
+    specs: [['配比', '12T × 66T'], ['减速比', '5.5 : 1']],
+    desc: '开式滚子链，没有壳体保护——链条状态需要每次上场前检查：过紧增加摩擦损耗并勒弯后轴，过松会跳齿甚至脱落。演示中链节沿真实的外公切线包络运行，节距与齿距严格一致：链轮每转过一个齿，链条恰好走过一节。',
   });
 
   addUpdate((dt, s) => {

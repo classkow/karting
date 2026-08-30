@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
-import { mesh, frameTubes, roundedRectShape, extrudeShape } from '../geometry.js';
+import { frameTubes, roundedRectShape } from '../geometry.js';
 import { registerPart } from '../registry.js';
 import { L } from '../layout.js';
 

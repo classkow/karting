@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
-import { mesh, tubeThrough, cylBetween } from '../geometry.js';
+import { tubeThrough, cylBetween } from '../geometry.js';
 import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
 

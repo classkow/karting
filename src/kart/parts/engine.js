@@ -69,9 +69,10 @@ export function buildEngine(root, asm) {
   });
 
   // —— 透明缸套（剖视）——
-  const liner = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.16, 28, 1, true), M.linerGlass);
+  // 长度/位置按行程 54mm 校核：覆盖下止点（活塞底缘 z+0.053）到上止点（顶面 z+0.157）
+  const liner = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.17, 28, 1, true), M.linerGlass);
   liner.rotation.x = Math.PI / 2;
-  liner.position.set(x, y, z + 0.145);
+  liner.position.set(x, y, z + 0.135);
   asm.add(liner);
   registerPart(liner, {
     id: 'cylinder', name: '气缸（透明剖视）', system: 'engine', explodeDir: [0.7, 0.8, 0.2], explodeDist: 0.8,

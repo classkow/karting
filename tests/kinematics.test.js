@@ -1,11 +1,15 @@
 // ————— 机构运动学单元测试 —————
-// 运行：npm test（即 node --test tests/）
+// 运行：npm test（即 node --test tests/kinematics.test.js，勿改回目录模式，Windows 有坑）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pistonStroke, chainPath, solveSteeringAngle } from '../src/sim/kinematics.js';
 
-const R = 0.035;   // 曲柄半径（同 layout.js）
-const LROD = 0.13; // 连杆长度
+const R = 0.027;   // 曲柄半径（同 layout.js）
+const LROD = 0.105; // 连杆长度
+
+// 与实车一致的链轮布置（曲轴链轮 → 后链轮）
+const C1 = { y: 0.165, z: -0.31, r: 0.0224 };
+const C2 = { y: 0.145, z: -0.53, r: 0.124 };
 
 test('曲柄滑块：上下止点解析值', () => {
   assert.ok(Math.abs(pistonStroke(Math.PI / 2, R, LROD) - (R + LROD)) < 1e-12, '上止点 = R + L');
@@ -23,27 +27,79 @@ test('曲柄滑块：全周连续且杆长约束恒成立', () => {
   }
 });
 
-test('链条包络：总长为正且路径闭合', () => {
-  const p = chainPath({ y: 0.165, z: -0.31, r: 0.0224 }, { y: 0.145, z: -0.53, r: 0.124 });
+test('链条包络：总长为正且路径闭合、相位可回绕', () => {
+  const p = chainPath(C1, C2);
   assert.ok(p.total > 0);
   const a = p.pointAt(0);
   const b = p.pointAt(p.total);
-  const c = p.pointAt(p.total * 0.37);
   assert.ok(Math.hypot(a.z - b.z, a.y - b.y) < 1e-9, '首尾应重合');
-  // 相位回绕：+total 与原位同点
+  const c = p.pointAt(p.total * 0.37);
   const d = p.pointAt(p.total * 0.37 + p.total);
-  assert.ok(Math.hypot(c.z - d.z, c.y - d.y) < 1e-9);
+  assert.ok(Math.hypot(c.z - d.z, c.y - d.y) < 1e-9, '+total 应与原位同点');
 });
 
-test('链条包络：直线段上相邻采样点间距 ≈ 步长', () => {
-  const p = chainPath({ y: 0.165, z: -0.31, r: 0.0224 }, { y: 0.145, z: -0.53, r: 0.124 });
+test('链条包络：直段是真外公切线（切点处半径 ⊥ 直段）', () => {
+  const p = chainPath(C1, C2);
+  // 直段长度应等于 √(d² − (r2−r1)²)
+  const d = Math.hypot(C2.z - C1.z, C2.y - C1.y);
+  const expect = Math.sqrt(d * d - (C2.r - C1.r) ** 2);
+  assert.ok(Math.abs(p.segLen - expect) < 1e-12, `直段长度 ${p.segLen} ≠ ${expect}`);
+
+  // 四个切点：pointAt(0)=p1c1, pointAt(segLen)=p1c2, pointAt(segLen+r2·arc2)=p2c2, pointAt(total−r1·arc1)=p2c1
+  const p1c1 = p.pointAt(0);
+  const p1c2 = p.pointAt(p.segLen);
+  const p2c2 = p.pointAt(p.segLen + C2.r * p.wrap.c2);
+  const p2c1 = p.pointAt(p.segLen + C2.r * p.wrap.c2 + p.segLen);
+  const seg1 = { z: p1c2.z - p1c1.z, y: p1c2.y - p1c1.y };
+  const seg2 = { z: p2c1.z - p2c2.z, y: p2c1.y - p2c2.y };
+  for (const [pt, c, seg, tag] of [
+    [p1c1, C1, seg1, '小轮切点1'],
+    [p1c2, C2, seg1, '大轮切点1'],
+    [p2c2, C2, seg2, '大轮切点2'],
+    [p2c1, C1, seg2, '小轮切点2'],
+  ]) {
+    const dot = (pt.z - c.z) * seg.z + (pt.y - c.y) * seg.y;
+    assert.ok(Math.abs(dot) < 1e-9, `${tag} 半径与直段不垂直: dot=${dot}`);
+  }
+});
+
+test('链条包络：大轮包角 > π > 小轮包角（开式传动，非交叉缠绕）', () => {
+  const p = chainPath(C1, C2);
+  // 理论值：ψ = asin((r2−r1)/d)，大轮 π+2ψ，小轮 π−2ψ
+  const d = Math.hypot(C2.z - C1.z, C2.y - C1.y);
+  const psi = Math.asin((C2.r - C1.r) / d);
+  assert.ok(Math.abs(p.wrap.c2 - (Math.PI + 2 * psi)) < 1e-12, '大轮包角');
+  assert.ok(Math.abs(p.wrap.c1 - (Math.PI - 2 * psi)) < 1e-12, '小轮包角');
+  assert.ok(p.wrap.c2 > Math.PI && p.wrap.c1 < Math.PI);
+  assert.ok(Math.abs(p.wrap.c1 + p.wrap.c2 - Math.PI * 2) < 1e-12, '两包角互补');
+});
+
+test('链条包络：链节行进方向与链轮正转线速度同向（不反向滑齿）', () => {
+  const p = chainPath(C1, C2);
+  const eps = 1e-6;
+  // 在两段包弧中点采样：链节速度方向应与"正转（rotation.x > 0）"轮面线速度方向一致。
+  // 正转线速度（点 = c + r·(cos a, sin a)，a 随正转减小）：(dz, dy) = (y_rel, −z_rel) · ω
+  for (const [s, c] of [
+    [p.segLen + (C2.r * p.wrap.c2) / 2, C2],
+    [p.total - (C1.r * p.wrap.c1) / 2, C1],
+  ]) {
+    const a = p.pointAt(s - eps);
+    const b = p.pointAt(s + eps);
+    const mid = p.pointAt(s);
+    const v = { z: b.z - a.z, y: b.y - a.y };
+    const vRot = { z: mid.y - c.y, y: -(mid.z - c.z) };
+    const cos = (v.z * vRot.z + v.y * vRot.y) / (Math.hypot(v.z, v.y) * Math.hypot(vRot.z, vRot.y));
+    assert.ok(cos > 0.999, `链速方向与链轮转向不一致: cos=${cos}`);
+  }
+});
+
+test('链条包络：直线段上相邻采样点间距 ≈ 步长（弧长参数化）', () => {
+  const p = chainPath(C1, C2);
   const step = 0.001;
-  const q1 = p.pointAt(p.total * 0.6); // 大概率落在大轮包弧上；换 s=segLen/2 检查直段
-  const near = p.pointAt(p.total * 0.1); // 第一段紧边直段内
-  const near2 = p.pointAt(p.total * 0.1 + step);
+  const near = p.pointAt(p.segLen / 2); // 直段1 内
+  const near2 = p.pointAt(p.segLen / 2 + step);
   const dist = Math.hypot(near.z - near2.z, near.y - near2.y);
   assert.ok(Math.abs(dist - step) / step < 0.02, `直段弧长参数化失真: ${dist}`);
-  assert.ok(Number.isFinite(Math.hypot(q1.z, q1.y)));
 });
 
 test('转向刚杆约束：解满足定长条件（全行程扫描）', () => {

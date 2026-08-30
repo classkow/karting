@@ -76,5 +76,3 @@ export const M = {
   // 金黄铜（轴衬）
   brass: new THREE.MeshPhysicalMaterial({ color: 0xc9a24b, metalness: 1.0, roughness: 0.32 }),
 };
-
-export const UP = new THREE.Vector3(0, 1, 0);

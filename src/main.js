@@ -232,15 +232,11 @@ window.addEventListener('keyup', (e) => {
 const clock = new THREE.Clock();
 let running = true;
 let wasRunning = false;
+let lastEngineState = -1;
 let fpsFrames = 0, fpsTime = 0;
 let fpsTotalFrames = 0, fpsTotalTime = 0, fpsAutoChecked = false;
 
-function loop() {
-  requestAnimationFrame(loop);
-  if (!running) return;
-
-  const rawDt = clock.getDelta();
-  const dt = Math.min(rawDt, 0.05);
+function frame(dt, rawDt = dt) {
   sim.step(dt);
   explode.update(dt);
   runUpdates(dt, sim);
@@ -255,7 +251,13 @@ function loop() {
     chipEngine.classList.toggle('running', engineActive);
     chipEngine.querySelector('b').textContent = engineActive ? '引擎运转' : '引擎停止';
   }
-  ctrl.setEngineUI(sim.engineOn, sim.cranking > 0);
+  // setEngineUI 会重建按钮内 DOM（innerHTML），只在状态变化时调用，不做每帧 DOM churn；
+  // 注意脏键要区分 熄火/拖转/运转 三态（拖转→点火 的迁移也要刷新按钮文案）
+  const engineState = sim.cranking > 0 ? 1 : sim.engineOn ? 2 : 0;
+  if (engineState !== lastEngineState) {
+    lastEngineState = engineState;
+    ctrl.setEngineUI(sim.engineOn, sim.cranking > 0);
+  }
 
   updateEngineAudio({
     on: sim.engineOn,
@@ -291,7 +293,7 @@ function loop() {
   }
   // 持续低帧率（<24fps）时自动关闭后期链，保住交互流畅度。
   // 采样从开场 12s 后起算（避开装配/着色器编译抖动期），未达标则继续观察；
-  // 降级只作用于本次会话，不写 localStorage（不永久覆盖主公的画质偏好）
+  // 降级只作用于本次会话，不写 localStorage（不永久覆盖用户的画质偏好）
   if (!fpsAutoChecked && fpsTotalTime >= 12) {
     if (fpsTotalFrames / fpsTotalTime < 24) {
       fpsAutoChecked = true;
@@ -302,6 +304,13 @@ function loop() {
       }
     }
   }
+}
+
+function loop() {
+  requestAnimationFrame(loop);
+  if (!running) return;
+  const rawDt = clock.getDelta();
+  frame(Math.min(rawDt, 0.05), rawDt);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -329,5 +338,11 @@ requestAnimationFrame(() => {
   setTimeout(() => document.getElementById('loader').classList.add('done'), 350);
 });
 
-// 调试句柄
-window.__kart = { sim, getPart, camera, controls, explode };
+// 调试句柄（scripts/smoke.mjs 无头冒烟依赖此接口；
+// step 用于在无头/限帧环境下手动泵帧，确定性验证机构运动）
+window.__kart = {
+  sim, getPart, camera, controls, explode,
+  step: (dt = 1 / 60, n = 1) => {
+    for (let i = 0; i < n; i++) frame(dt);
+  },
+};

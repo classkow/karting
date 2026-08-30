@@ -199,7 +199,11 @@ export function initControlPanel(container, api) {
     api.onExplode(v / 100);
     $('#v-explode').textContent = v + '%';
   });
-  $('#rg-steer').addEventListener('dblclick', () => setSteerUI(0));
+  // 双击回正：必须回写 sim（走 api.onSteer），否则滑条归零了车还拐着
+  $('#rg-steer').addEventListener('dblclick', () => {
+    api.onSteer(0);
+    setSteerUI(0);
+  });
 
   btnEngine.addEventListener('click', () => api.onEngine());
   tgRotate.addEventListener('click', () => api.onRotate());

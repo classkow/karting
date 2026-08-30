@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
-import { mesh, drilledDiscGeometry, tubeThrough, cylBetween } from '../geometry.js';
+import { drilledDiscGeometry, tubeThrough, cylBetween } from '../geometry.js';
 import { registerPart, addUpdate } from '../registry.js';
 import { L } from '../layout.js';
 
@@ -87,6 +87,8 @@ export function buildBrakes(root) {
   });
 
   addUpdate((dt, s) => {
+    // 制动盘随后轴旋转（说明词承诺"随轴一起旋转"）
+    refs.disc.rotation.x += s.axleOmega * dt;
     // 刹车片夹紧：盘面半厚 2.25mm + 片半厚 4mm = 贴合中心距 6.25mm；
     // 松开时留 3.5mm 工作间隙 → 中心距 9.75mm，踩满时恰好贴盘（间隙 3.5mm → 0）
     const gap = 0.00625 + (1 - s.brake) * 0.0035;
