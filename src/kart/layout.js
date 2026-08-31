@@ -22,7 +22,8 @@ export const L = {
   rodLen: 0.105,          // 连杆中心距 105mm（真机尺寸）
   chainX: 0.395,          // 链条平面（曲轴链轮与后链轮所在 x）
   clutchR: CLUTCH_R,
-  sprocketR: 0.124,       // 后链轮节圆半径（66T）
+  // 后链轮节圆半径按齿比精确取 66/12 倍：链节距在两个链轮上严格一致（真啮合），减速比恰为 5.5
+  sprocketR: CLUTCH_R * (66 / 12),
   chainPitch: (2 * Math.PI * CLUTCH_R) / 12, // 链节距 = 链轮齿距：链节与齿严格啮合
 
   seatZ: -0.26,

@@ -45,4 +45,4 @@ src/
 - 部件通过 `registry.registerPart(group, def)` 注册（名称/系统/说明/爆炸向量）；registry 是**显式实例**（`createRegistry()`），builder/parts/ui/interaction 全部经参数注入，无模块级隐式单例。
 - 每帧顺序：`sim.step`（状态机）→ `registry.runUpdates`（各部件更新器写机构位姿，动态件只写 `userData.mechPos`）→ `explode.update`（爆炸位移唯一出口：`position = (mechPos ?? basePos) + dir·t`）→ 渲染。机构位移与爆炸位移不会互相覆盖。
 - 运动学（活塞位移、链条包络相位、拉杆角度）全部按机构约束解算，单一事实来源在 `src/sim/kinematics.js`（零渲染依赖，`npm test` 直接断言上下止点、链条切线/包角/链速方向、转向定长约束）。
-- 性能：链条走 `InstancedMesh`（约 160 实例）、车架桁架合并为 1 次绘制；悬停射线经 rAF 节流且跳过实例网格；弱 GPU 下后期链持续低于 24fps 自动降级（只作用本次会话）。
+- 性能：链条走 `InstancedMesh`（约 200 实例）、车架桁架合并为 1 次绘制；悬停射线经 rAF 节流且跳过实例网格；弱 GPU 下后期链持续低于 24fps 自动降级（只作用本次会话）。

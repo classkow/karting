@@ -6,7 +6,9 @@
 // 设计要点：
 // - headless Chrome（swiftshader）不按正常节奏驱动 rAF，运动采样改用
 //   __kart.step(dt, n) 手动泵帧（确定性、不受帧率影响）；截图仍走 Page.captureScreenshot。
-// - preview 端口被占用时直接失败（strictPort），避免误测到陈旧服务的旧产物。
+// - preview/CDP 端口与 Chrome 配置目录均按进程号取唯一值，不与残留孤儿进程撞车；
+//   Windows 下 Chrome 需 taskkill /T 按进程树杀（child.kill 只杀启动进程）。
+// - 全局硬超时 180s，任何环节挂死都以非零码退出。
 // - vite preview 在本机绑定 localhost(::1)，直连 127.0.0.1 会被拒。
 
 import { spawn } from 'node:child_process';
@@ -15,8 +17,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const PREVIEW_PORT = 41987;
-const CDP_PORT = 9223;
+// 端口/配置目录按进程号取唯一值：上一轮若异常退出留下孤儿进程，也不会与本轮撞车
+const PREVIEW_PORT = 40000 + (process.pid % 10000);
+const CDP_PORT = 20000 + (process.pid % 10000);
+const PROFILE_DIR = join(ROOT, '.tmp', `chrome-profile-${process.pid}`);
 const PAGE_URL = `http://localhost:${PREVIEW_PORT}/`;
 const CDP_URL = `http://localhost:${CDP_PORT}`;
 const OUT_DIR = join(ROOT, '.tmp', 'smoke');
@@ -97,21 +101,47 @@ function check(name, ok, detail = '') {
   if (!ok) process.exitCode = 1;
 }
 
+// Windows 上 child.kill() 只杀启动进程，Chrome 子进程会残留并占用调试端口——按进程树杀
+function killTree(proc) {
+  if (!proc || proc.killed) return;
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/PID', String(proc.pid), '/F', '/T'], { stdio: 'ignore' });
+  } else {
+    try { process.kill(-proc.pid, 'SIGKILL'); } catch { proc.kill('SIGKILL'); }
+  }
+}
+
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
 
+  // 全局硬超时：任何环节挂死都不无限等待（超时杀进程树后退出码非零）
+  const hardTimeout = setTimeout(() => {
+    console.error('冒烟失败: 全局超时');
+    killTree(chromeRef);
+    killTree(previewRef);
+    process.exit(2);
+  }, 300_000);
+  hardTimeout.unref();
+  let chromeRef = null;
+  let previewRef = null;
+
   // 1. 起 preview（直接调 node + vite 入口，绕开 Windows 上 spawn .cmd 的 EINVAL）
+  // 以子进程 stdout 打印 "Local:" 为就绪标志——这是本进程确实抢到端口的证据（strictPort 下端口被占会直接退出）
   const preview = spawn(process.execPath,
     [join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'preview', '--port', String(PREVIEW_PORT), '--strictPort'],
     { cwd: ROOT, stdio: 'pipe' });
-  await waitFor(async () => (await fetch(PAGE_URL)).ok, 'vite preview 就绪');
+  previewRef = preview;
+  let previewReady = false;
+  preview.stdout.on('data', (d) => { if (String(d).includes('Local:')) previewReady = true; });
+  await waitFor(() => previewReady, 'vite preview 就绪');
 
-  // 2. 拉起 headless Chrome
+  // 2. 拉起 headless Chrome（配置目录随进程号唯一，避免与残留孤儿抢锁）
   const chrome = spawn(findChrome(), [
     '--headless=new', '--use-angle=swiftshader', '--mute-audio', '--no-first-run',
     `--remote-debugging-port=${CDP_PORT}`, '--window-size=1600,900',
-    `--user-data-dir=${join(ROOT, '.tmp', 'chrome-profile')}`, 'about:blank',
+    `--user-data-dir=${PROFILE_DIR}`, 'about:blank',
   ], { stdio: 'pipe' });
+  chromeRef = chrome;
 
   try {
     const target = await waitFor(async () => {
@@ -126,11 +156,11 @@ async function main() {
     await waitFor(() => evalJs(rpc, '!!window.__kart'), '应用启动（window.__kart）');
     check('应用启动无异常', true);
 
-    const pump = (n) => evalJs(rpc, `__kart.step(1/60, ${n}); "ok"`);
+    const pump = (n) => evalJs(rpc, `__kart.step(1/30, ${n}); "ok"`);
 
     // 3. 机构运动采样：启动发动机并泵帧，前后对比
     await evalJs(rpc, '__kart.sim.startEngine(); __kart.sim.throttle = 1; "ok"');
-    await pump(120); // 拖转 0.9s + 油门拉升
+    await pump(45); // 拖转 0.9s + 油门拉升（swiftshader 慢，泵帧走 dt=1/30）
     const sampleExpr = `JSON.stringify({
       axle: __kart.getPart('rear-axle').group.rotation.x,
       sprocket: __kart.getPart('rear-sprocket').group.rotation.x,
@@ -143,17 +173,23 @@ async function main() {
       rpm: Math.round(__kart.sim.rpm),
     })`;
     const s0 = JSON.parse(await evalJs(rpc, sampleExpr));
-    await pump(30);
+    await pump(15);
     const s1 = JSON.parse(await evalJs(rpc, sampleExpr));
     check('发动机点火并拉升转速', s1.rpm > 2000, `rpm=${s1.rpm}`);
     for (const k of Object.keys(s0)) {
-      if (k === 'rpm') continue;
+      if (k === 'rpm' || k === 'wheelF') continue;
       check(`机构运动: ${k} 随引擎转动`, Math.abs(s1[k] - s0[k]) > 1e-6, `${s0[k].toFixed(4)} → ${s1[k].toFixed(4)}`);
     }
+    // 前轮无动力：展示台上前轮不空转（卡丁车是后驱车）——回归用户报障
+    check('前轮不空转（后驱车）', Math.abs(s1.wheelF - s0.wheelF) < 1e-9, `wheelF ${s0.wheelF} → ${s1.wheelF}`);
+    // 后轴自转轴心必须在其轴心线上（绕世界原点公转 = 横杆甩圈穿帮）——回归用户报障
+    const axlePos = JSON.parse(await evalJs(rpc, `JSON.stringify(__kart.getPart('rear-axle').group.position)`));
+    check('后轴绕自身轴心自转', Math.abs(axlePos.y - 0.145) < 1e-6 && Math.abs(axlePos.z - (-0.53)) < 1e-6,
+      `origin=(${axlePos.x}, ${axlePos.y}, ${axlePos.z})`);
 
     // 4. 阿克曼：满舵时左右轮转角不相等
     await evalJs(rpc, '__kart.sim.steer = 1; "ok"');
-    await pump(40);
+    await pump(20);
     const steer = JSON.parse(await evalJs(rpc, `JSON.stringify({
       l: __kart.getPart('spindle-l').group.rotation.y,
       r: __kart.getPart('spindle-r').group.rotation.y,
@@ -161,7 +197,7 @@ async function main() {
     check('阿克曼几何: 满舵左右轮转角不同', Math.abs(Math.abs(steer.l) - Math.abs(steer.r)) > 0.01,
       `L=${steer.l.toFixed(4)} R=${steer.r.toFixed(4)}`);
     await evalJs(rpc, '__kart.sim.steer = 0; "ok"');
-    await pump(40);
+    await pump(20);
 
     // 5. 装配态截图（整车 / 传动特写）
     async function shot(name, camPos, camTgt) {
@@ -179,15 +215,26 @@ async function main() {
     }
     await shot('01-overview.png', [2.7, 1.15, 2.75], [0, 0.28, 0]);
     await shot('02-drivetrain.png', [0.95, 0.75, -0.1], [0.39, 0.15, -0.42]);
+    // 发动机剖视特写：先隐去右侧箱避免遮挡（拍完恢复）
+    await evalJs(rpc, `__kart.getPart('sidepod-r').group.visible = false; "ok"`);
+    await shot('04-engine.png', [0.82, 0.62, 0.55], [0.33, 0.16, -0.16]);
+    await evalJs(rpc, `__kart.getPart('sidepod-r').group.visible = true; "ok"`);
 
     // 6. 爆炸分解（截图放最后，避免污染装配态画面）
     await evalJs(rpc, '__kart.explode.setTarget(1); "ok"');
-    await pump(60);
+    await pump(30);
     const exploded = JSON.parse(await evalJs(rpc, `JSON.stringify({
       y: __kart.getPart('seat').group.position.y,
       e: __kart.explode.get(),
     })`));
     check('爆炸分解: 座椅上移', exploded.e > 0.9 && exploded.y > 0.1, `explode=${exploded.e.toFixed(2)} seatY=${exploded.y.toFixed(3)}`);
+
+    // 左右侧箱应向相反方向分离（此前共用一个爆炸方向，两只都往右飞）——回归用户报障
+    const pods = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      l: __kart.getPart('sidepod-l').group.position.x,
+      r: __kart.getPart('sidepod-r').group.position.x,
+    })`));
+    check('爆炸分解: 左右侧箱背向分离', pods.l < -0.6 && pods.r > 0.6, `L=${pods.l.toFixed(2)} R=${pods.r.toFixed(2)}`);
 
     await shot('03-explode.png', [2.4, 1.6, 2.4], [0, 0.5, 0]);
     await evalJs(rpc, '__kart.explode.setTarget(0); "ok"');
@@ -195,8 +242,8 @@ async function main() {
     check('控制台零报错', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
     close();
   } finally {
-    chrome.kill();
-    preview.kill();
+    killTree(chrome);
+    killTree(preview);
   }
 
   const failed = checks.filter((c) => !c.ok).length;

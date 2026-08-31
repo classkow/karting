@@ -3,7 +3,7 @@ import { M } from '../materials.js';
 import { mesh, cylBetween, sprocketGeometry } from '../geometry.js';
 import { L } from '../layout.js';
 import { solveSteeringAngle } from '../../sim/kinematics.js';
-import { buildWheel, addRolling } from './wheels.js';
+import { buildWheel } from './wheels.js';
 
 // ————— 转向系统：方向盘 → 转向柱 → 齿轮齿条 → 拉杆 → 转向节 —————
 // 拉杆与转向臂按刚性杆约束精确求解（牛顿迭代），几何永不脱节。
@@ -45,19 +45,17 @@ function buildSpindle(reg, side) {
   // 臂端球铰
   const ball = mesh(new THREE.SphereGeometry(0.0115, 14, 10), M.zinc, -sign * ARM_IN, ARM_Y, -ARM);
   pivot.add(ball);
-  // 前轮（随转向节偏转）
+  // 前轮（随转向节偏转。卡丁车是后驱车：展示台静止场景下前轮无动力、不空转，
+  // 只有后轮被链条驱动——前轮不做滚动更新是有意为之，不是漏了）
   const wheel = buildWheel(L.wheelF.r, L.wheelF.w);
   wheel.position.set(0, L.wheelF.r - KP_Y, 0);
   pivot.add(wheel);
-  // 纯滚动条件：轮速 = 后轴线速度 / 前轮半径（前轮直径小，转得更快）
-  const F_RATIO = L.wheelR.r / L.wheelF.r;
-  addRolling(reg, wheel, (s) => s.wheelOmega * F_RATIO);
   const wid = side === 'L' ? 'wheel-fl' : 'wheel-fr';
   reg.registerPart(wheel, {
     id: wid, name: side === 'L' ? '左前轮' : '右前轮', system: 'wheels',
     explodeDir: [sign, 0.1, 0.25], explodeDist: 0.55,
-    specs: [['规格', '5.0 × 5 光头胎'], ['驱动', '无（仅转向/滚动）']],
-    desc: '前轮通过轮毂轴承浮套在转向节上，只负责转向与滚动，没有任何驱动与制动。卡丁车前轮外倾角与前束都接近 0°，一切以滚阻最小、指向最准为目标。',
+    specs: [['规格', '5.0 × 5 光头胎'], ['驱动', '无（仅转向）']],
+    desc: '前轮通过轮毂轴承浮套在转向节上，没有驱动也没有制动——卡丁车是后驱车，所以在展示台上空转的只有后轮。前轮外倾角与前束都接近 0°，一切以滚阻最小、指向最准为目标。',
   });
   refs[side] = { pivot, wheel };
   return pivot;

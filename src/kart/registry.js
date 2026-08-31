@@ -23,9 +23,6 @@ export function createRegistry() {
   const updaters = [];
 
   return {
-    // 全局动画量（爆炸系数，explode 模块写，部件更新器可读）
-    anim: { explode: 0 },
-
     registerPart(group, def) {
       const part = { ...def, group, visible: true };
       group.userData.partId = def.id;

@@ -15,7 +15,6 @@ export function initExplode(registry) {
     const k = Math.min(1, dt * 4);
     state.current += (state.target - state.current) * k;
     if (Math.abs(state.target - state.current) < 0.0005) state.current = state.target;
-    registry.anim.explode = state.current;
     for (const p of registry.allParts()) {
       const g = p.group;
       const base = g.userData.mechPos ?? g.userData.basePos;

@@ -203,7 +203,7 @@ export function createApp() {
   let wasRunning = false;
   let lastEngineState = -1;
 
-  function frame(dt, rawDt = dt) {
+  function frame(dt, rawDt = dt, render = true) {
     sim.step(dt);
     registry.runUpdates(dt, sim); // 各部件先写机构位姿（动态件写 mechPos）
     explode.update(dt);           // 再由爆炸模块统一落 position —— 动态件零帧滞后
@@ -234,16 +234,18 @@ export function createApp() {
       muted: !prefs.sound,
     });
 
-    if (usePostfx) {
-      try {
-        fx.composer.render();
-      } catch (e) {
-        console.warn('后期渲染失败，本次会话余下时间改用直接渲染：', e);
-        usePostfx = false;
+    if (render) {
+      if (usePostfx) {
+        try {
+          fx.composer.render();
+        } catch (e) {
+          console.warn('后期渲染失败，本次会话余下时间改用直接渲染：', e);
+          usePostfx = false;
+          renderer.render(scene, camera);
+        }
+      } else {
         renderer.render(scene, camera);
       }
-    } else {
-      renderer.render(scene, camera);
     }
 
     const fpsText = fpsGuard.frame(rawDt);
@@ -283,7 +285,7 @@ export function createApp() {
   });
 
   // 调试句柄（scripts/smoke.mjs 无头冒烟依赖此接口；
-  // step 用于在无头/限帧环境下手动泵帧，确定性验证机构运动）
+  // step 用于在无头/限帧环境下手动泵帧，确定性验证机构运动；render=false 时跳过渲染，纯步进飞快）
   return {
     sim,
     getPart: (id) => registry.getPart(id),
@@ -291,8 +293,8 @@ export function createApp() {
     camera,
     controls,
     explode,
-    step: (dt = 1 / 60, n = 1) => {
-      for (let i = 0; i < n; i++) frame(dt);
+    step: (dt = 1 / 60, n = 1, render = false) => {
+      for (let i = 0; i < n; i++) frame(dt, dt, render);
     },
   };
 }

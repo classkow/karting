@@ -116,7 +116,7 @@ export function buildEngine(root, asm, reg) {
   smallEnd.position.z = 1;
   rod.add(smallEnd);
   rod.scale.z = ROD_LEN;
-  rod.userData.mechPos = new THREE.Vector3(x, y, z + ROD_LEN / 2);
+  rod.userData.mechPos = new THREE.Vector3(x, y + CRANK_R, z); // 动态件：机构位姿（曲柄销处）
   asm.add(rod);
   refs.rod = rod;
   reg.registerPart(rod, {
@@ -290,14 +290,10 @@ export function buildEngine(root, asm, reg) {
     const stroke = pistonStroke(th);
     refs.piston.userData.mechPos.set(x, y, z + stroke);
 
-    // 连杆：曲柄销 → 活塞销（始终位于 y-z 平面内）
+    // 连杆：杆组原点 = 曲柄销（几何从原点沿 +z 展开到杆长），旋转对准活塞销
     _pin.set(x, y + CRANK_R * Math.cos(th), z + CRANK_R * Math.sin(th));
     _pistonPin.set(x, y, z + stroke);
-    refs.rod.userData.mechPos.set(
-      (_pin.x + _pistonPin.x) / 2,
-      (_pin.y + _pistonPin.y) / 2,
-      (_pin.z + _pistonPin.z) / 2
-    );
+    refs.rod.userData.mechPos.copy(_pin);
     refs.rod.rotation.x = Math.atan2(_pin.y - _pistonPin.y, _pistonPin.z - _pin.z);
 
     // 节气门随油门开度旋转（0 关闭 → 约 77° 全开）

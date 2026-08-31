@@ -109,7 +109,7 @@ function tachSVG() {
     }
   }
   return `
-    <svg id="tach" viewBox="0 0 260 156">
+    <svg id="tach" viewBox="0 0 260 176">
       <defs>
         <linearGradient id="tach-arc" x1="0" y1="1" x2="1" y2="0">
           <stop offset="0%" stop-color="#3d4b5f"/>
@@ -121,7 +121,6 @@ function tachSVG() {
           <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
       </defs>
-      <circle cx="${cx}" cy="${cy}" r="${R + 16}" fill="rgba(255,255,255,0.015)"/>
       <path d="${arcPath(0, 1, R)}" stroke="#1d2530" stroke-width="10" fill="none" stroke-linecap="round"/>
       <path d="${arcPath(0, 1, R)}" stroke="url(#tach-arc)" stroke-width="10" fill="none" stroke-linecap="round" opacity="0.34"/>
       <path d="${arcPath(13 / 14, 1, R)}" stroke="#ff5d5d" stroke-width="10" fill="none" opacity="0.55"/>
@@ -132,7 +131,7 @@ function tachSVG() {
       <circle cx="${cx}" cy="${cy}" r="8" fill="#171d26" stroke="#3d4b5f" stroke-width="1.5"/>
       <circle cx="${cx}" cy="${cy}" r="2.6" fill="#ffb547"/>
       <text id="tach-rpm" x="${cx}" y="${cy + 34}" fill="#f2f6fa" font-size="21" font-weight="700" text-anchor="middle" font-family="Consolas, 'JetBrains Mono', monospace">0</text>
-      <text x="${cx}" y="${cy + 49}" fill="#5c6b7d" font-size="10" text-anchor="middle" letter-spacing="2.5">RPM ×1000</text>
+      <text x="${cx}" y="${cy + 50}" fill="#5c6b7d" font-size="10" text-anchor="middle" letter-spacing="2.5">RPM ×1000</text>
     </svg>
   `;
 }

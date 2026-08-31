@@ -92,10 +92,3 @@ export function buildWheels(root, reg) {
     for (const w of rears) w.rotation.x += s.wheelOmega * dt;
   });
 }
-
-// 供转向节复用：前轮随车速滚动（绕自身 x 轴自转）
-export function addRolling(reg, wheel, getOmega) {
-  reg.addUpdate((dt, s) => {
-    wheel.rotation.x += (getOmega ? getOmega(s) : s.wheelOmega) * dt;
-  });
-}

@@ -22,15 +22,17 @@ const refs = {};
 
 export function buildDrivetrain(root, reg) {
   // —— 后轴 ——
+  // 组原点必须在轴心线上：rotation.x 是绕自身轴自转，不是绕世界原点公转
   const axle = new THREE.Group();
+  axle.position.set(0, AXLE_Y, AXLE_Z);
   axle.add(
-    cylBetween(new THREE.Vector3(-L.rearTrack, AXLE_Y, AXLE_Z), new THREE.Vector3(L.rearTrack, AXLE_Y, AXLE_Z), 0.019, M.chrome, 16)
+    cylBetween(new THREE.Vector3(-L.rearTrack, 0, 0), new THREE.Vector3(L.rearTrack, 0, 0), 0.025, M.chrome, 16)
   );
   // 轴端花键轮毂座
   for (const side of [-1, 1]) {
-    const hubSeat = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.05, 16), M.steel);
+    const hubSeat = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.05, 16), M.steel);
     hubSeat.rotation.z = Math.PI / 2;
-    hubSeat.position.set(side * (L.rearTrack - 0.03), AXLE_Y, AXLE_Z);
+    hubSeat.position.set(side * (L.rearTrack - 0.03), 0, 0);
     axle.add(hubSeat);
   }
   root.add(axle);
@@ -75,7 +77,7 @@ export function buildDrivetrain(root, reg) {
   refs.sprocket = sprocket;
   reg.registerPart(sprocket, {
     id: 'rear-sprocket', name: '后链轮', system: 'drivetrain', explodeDir: [0.5, 0.9, -0.3], explodeDist: 0.55,
-    specs: [['齿数', '66T'], ['节圆直径', 'Ø248mm']],
+    specs: [['齿数', '66T'], ['节圆直径', 'Ø246mm']],
     desc: '固定在后轴上的大齿盘。链条把曲轴链轮（12T）的动力传到这里，减速比 = 66 ÷ 12 ≈ 5.5。想加速猛就换大后齿盘，想要极速就换小的——换齿比是卡丁车赛场最常见的"调校"。',
   });
 

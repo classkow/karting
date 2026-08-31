@@ -81,20 +81,23 @@ export function buildBodywork(root, reg) {
     desc: '车尾的全宽护杠，最重要的作用是防止后车"钻撞"——前车头钻入你的后轮会直接把车弹翻。后杠把追尾载荷导向车架纵梁，是安全规则重点检查的部件。',
   });
 
-  // —— 侧箱（避开右侧发动机，位于车架外侧与后轮之间）——
-  const pods = new THREE.Group();
+  // —— 侧箱（左右两个独立部件，爆炸时各自向本侧飞出）——
   const podShape = roundedRectShape(0.32, 0.115, 0.045); // z-y 轮廓
   const podGeo = new THREE.ExtrudeGeometry(podShape, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.014, bevelSize: 0.014, bevelSegments: 3, curveSegments: 10 });
   for (const side of [-1, 1]) {
+    const podG = new THREE.Group();
     const pod = new THREE.Mesh(podGeo, M.paintRed);
     pod.rotation.y = -Math.PI / 2;
-    pod.position.set(side * 0.452, 0.118, -0.20);
-    pods.add(pod);
+    podG.add(pod);
+    podG.position.set(side * 0.452, 0.118, -0.20);
+    root.add(podG);
+    reg.registerPart(podG, {
+      id: side < 0 ? 'sidepod-l' : 'sidepod-r',
+      name: side < 0 ? '左侧箱' : '右侧箱',
+      system: 'chassis',
+      explodeDir: [side, 0.1, 0], explodeDist: 0.75,
+      specs: [['材质', 'ABS / 玻纤增强塑料'], ['位置', '座椅两侧']],
+      desc: '座椅两侧的塑料护板，保护驾驶员肋部不被别车的车轮碰到，同时梳理流经车身侧面的气流。侧箱由快拆扎带固定，赛后拆下即可完整看到车架侧面。',
+    });
   }
-  root.add(pods);
-  reg.registerPart(pods, {
-    id: 'sidepods', name: '侧箱', system: 'chassis', explodeDir: [1, 0.1, 0], explodeDist: 0.75,
-    specs: [['材质', 'ABS / 玻纤增强塑料'], ['位置', '座椅两侧']],
-    desc: '座椅两侧的塑料护板，保护驾驶员肋部不被别车的车轮碰到，同时梳理流经车身侧面的气流。侧箱由快拆扎带固定，赛后拆下即可完整看到车架侧面。',
-  });
 }
