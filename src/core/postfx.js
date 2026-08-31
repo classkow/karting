@@ -18,9 +18,8 @@ export function createPostFX(renderer, scene, camera, w, h) {
 
   composer.addPass(new RenderPass(scene, camera));
 
-  let gtao = null;
   try {
-    gtao = new GTAOPass(scene, camera, w, h);
+    const gtao = new GTAOPass(scene, camera, w, h);
     gtao.output = GTAOPass.OUTPUT.Default;
     gtao.updateGtaoMaterial({
       radius: 0.07, distanceExponent: 1.2, thickness: 1, scale: 1.4,
@@ -28,7 +27,7 @@ export function createPostFX(renderer, scene, camera, w, h) {
     });
     composer.addPass(gtao);
   } catch {
-    gtao = null; // 环境不支持时优雅降级
+    // 环境不支持 GTAO 时优雅降级（跳过该 Pass，不阻断渲染）
   }
 
   const hoverPass = new OutlinePass(size, scene, camera);

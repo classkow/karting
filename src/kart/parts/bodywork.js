@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { M } from '../materials.js';
 import { tubeThrough, roundedRectShape, taperByAxis, cylBetween } from '../geometry.js';
 import { numberPlate } from '../../core/textures.js';
-import { L } from '../layout.js';
 
 // ————— 车身覆盖件：整流罩 / 号码牌 / 侧箱 / 前后保险杠 —————
 

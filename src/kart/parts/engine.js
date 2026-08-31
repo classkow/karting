@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
-import { mesh, lathe, tubeThrough, sprocketGeometry, cylBetween } from '../geometry.js';
+import { lathe, tubeThrough, sprocketGeometry, cylBetween } from '../geometry.js';
 import { L } from '../layout.js';
 import { pistonStroke as strokeFn } from '../../sim/kinematics.js';
 

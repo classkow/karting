@@ -1,19 +1,24 @@
 {
   "name": "kart-mechanics-simulator",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test tests/kinematics.test.js",
-    "open": "start \"\" dist/index.html"
+    "smoke": "node scripts/smoke.mjs",
+    "open": "start \"\" dist/index.html",
+    "lint": "eslint ."
   },
   "dependencies": {
     "three": "^0.169.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0",
     "vite": "^5.4.0",
     "vite-plugin-singlefile": "^2.3.3"
   }

@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { M } from '../materials.js';
-import { tubeThrough, cylBetween } from '../geometry.js';
-import { L } from '../layout.js';
+import { tubeThrough } from '../geometry.js';
 
 // ————— 操纵与油路：踏板 / 油门拉线 / 油箱 / 燃油管 —————
 
