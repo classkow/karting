@@ -420,6 +420,13 @@ export function initPanelCollapse() {
   };
   head2.addEventListener('click', () => {
     if (!mq.matches) return; // 大屏面板常驻，不需要折叠
+    // 面板整体折叠时（手机初始态），点本标题 = 先展开整个面板——
+    // 否则切换的是本就 display:none 的区块，视觉上毫无反应（触屏用户会认为标签坏了）
+    const panel = head2.closest('#control-panel');
+    if (panel.classList.contains('panel-collapsed')) {
+      panel.classList.remove('panel-collapsed');
+      return;
+    }
     const collapsed = head2.classList.toggle('sec-collapsed');
     sectionBlocks().forEach((b) => { b.style.display = collapsed ? 'none' : ''; });
   });
