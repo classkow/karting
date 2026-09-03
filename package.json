@@ -7,13 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/kinematics.test.js",
+    "test": "node --test tests/kinematics.test.js tests/state.test.js",
     "smoke": "node scripts/smoke.mjs",
     "open": "start \"\" dist/index.html",
     "lint": "eslint ."
   },
   "dependencies": {
-    "three": "^0.169.0"
+    "three": "0.169.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

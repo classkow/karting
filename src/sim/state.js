@@ -6,6 +6,8 @@ import { L } from '../kart/layout.js';
 
 const IDLE = 1800;
 const MAX_RPM = 13800;
+// 蹄块式离心离合器接合转速（engine.js 说明文案"约 4000 rpm"以本常量为准）
+export const CLUTCH_ENGAGE_RPM = 4000;
 const RATIO = L.clutchR / L.sprocketR; // 12T / 66T ≈ 0.182
 const WHEEL_R = L.wheelR.r;
 const VISUAL_SLOW = 0.2;   // 视觉降速（机构演示用）
@@ -35,6 +37,7 @@ export function createSim() {
   };
   s.stopEngine = () => {
     s.engineOn = false;
+    s.cranking = 0; // 拖转中熄火即中止起动，否则倒计时结束仍会点火
   };
   s.toggleEngine = () => {
     if (s.engineOn || s.cranking > 0) s.stopEngine();

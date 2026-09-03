@@ -1,4 +1,4 @@
-import { VIEWS } from './cameraRig.js';
+import { VIEWS } from './views.js';
 
 // ————— 键盘快捷键 —————
 export function initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking }) {
@@ -7,6 +7,7 @@ export function initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return;
     if (e.repeat) return; // 拦下按键自动重复：按住空格不会反复启停、按住 W 油门不会秒满
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // 修饰键组合留给浏览器（Ctrl+R 刷新、Ctrl+S 保存等）
     const k = e.key.toLowerCase();
     // 焦点停在按钮等可聚焦元素上时，空格/Enter 交给浏览器合成 click，避免双触发
     if (e.target !== document.body && (k === ' ' || e.key === 'Enter')) return;
