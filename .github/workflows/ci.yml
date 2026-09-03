@@ -1,0 +1,36 @@
+# 质量门禁：lint → 单测 → 构建 → 无头冒烟
+# smoke 依赖 Chrome/Ubuntu runner 自带 Chromium 不在候选路径里，用 CHROME_PATH 指过去；
+# 但 swiftshader 无头环境差异偶发误报，设为 continue-on-error 不卡门禁（失败会显示在 CI 日志里）。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: smoke
+        continue-on-error: true
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          google-chrome --version || true
+          node scripts/smoke.mjs

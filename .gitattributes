@@ -1,0 +1,10 @@
+# 统一换行符管理：仓库内一律 LF，检出按平台处理
+* text=auto
+
+# Windows 批处理必须是 CRLF
+*.bat text eol=crlf
+
+# 二进制文件不做转换
+*.png binary
+*.jpg binary
+*.ico binary
