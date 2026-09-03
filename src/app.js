@@ -158,8 +158,7 @@ export function createApp() {
     lastPointer[1] = e.clientY;
   });
 
-  const picking = initPicking({
-    canvas,
+  const picking = initPicking({    canvas,
     camera,
     kartRoot: kart,
     registry,
@@ -187,7 +186,7 @@ export function createApp() {
     }
   });
 
-  initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking });
+  const driveKeys = initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking });
 
   // ————— FPS 统计与持续低帧率自动降级 —————
   const fpsGuard = createFpsGuard({
@@ -207,6 +206,7 @@ export function createApp() {
   let lastEngineState = -1;
 
   function frame(dt, rawDt = dt, render = true) {
+    driveKeys.update(dt); // 长按 W/S/A/D 的持续输入
     sim.step(dt);
     registry.runUpdates(dt, sim); // 各部件先写机构位姿（动态件写 mechPos）
     explode.update(dt);           // 再由爆炸模块统一落 position —— 动态件零帧滞后

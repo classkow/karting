@@ -353,8 +353,8 @@ export function initTooltip(el) {
 export function initHelp(overlay) {
   const SHORTCUTS = [
     ['空格', '启动 / 熄火'],
-    ['W / S', '油门 + / −'],
-    ['A / D', '左转 / 右转'],
+    ['W / S', '油门 + / −（可长按）'],
+    ['A / D', '左转 / 右转（可长按）'],
     ['B', '刹车（按住）'],
     ['E', '爆炸分解 开/合'],
     ['R', '视角复位'],
