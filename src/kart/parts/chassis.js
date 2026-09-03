@@ -75,16 +75,20 @@ export function buildChassis(root, reg) {
   s.quadraticCurveTo(-0.185, 0.14, -0.14, 0.105);
   s.closePath();
   const shellGeo = new THREE.ExtrudeGeometry(s, { depth: 0.30, bevelEnabled: true, bevelThickness: 0.022, bevelSize: 0.022, bevelSegments: 3, curveSegments: 14 });
+  shellGeo.rotateY(-Math.PI / 2);
+  shellGeo.translate(0.15, 0, 0); // 拉伸沿 -x 偏一侧,平移回车宽居中
   const shell = new THREE.Mesh(shellGeo, M.grp);
-  shell.rotation.y = -Math.PI / 2;
   seat.add(shell);
-  // 坐垫与靠背软垫（贴合在壳体外表面）
+  // 坐垫与靠背软垫:位置/倾角按壳体内表面实测拟合(射线扫描),零穿模
   const cush = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.035, 0.19, 3, 0.014), M.fabric);
-  cush.position.set(0, 0.228, 0.075);
-  const back = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.32, 0.026, 3, 0.012), M.fabric);
-  back.position.set(0, 0.39, -0.145);
-  back.rotation.x = 0.30;
-  seat.add(cush, back);
+  cush.position.set(-0.15, 0.225, 0.02);
+  const backLo = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.17, 0.02, 3, 0.01), M.fabric);
+  backLo.position.set(-0.15, 0.371, -0.082);
+  backLo.rotation.x = -0.369; // 腰背段后仰,前面贴住内表面
+  const backHi = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.11, 0.02, 3, 0.01), M.fabric);
+  backHi.position.set(-0.15, 0.498, -0.123);
+  backHi.rotation.x = -0.226; // 肩靠段趋直,前面贴住内表面
+  seat.add(cush, backLo, backHi);
   seat.position.set(0, 0, L.seatZ);
   root.add(seat);
   reg.registerPart(seat, {
