@@ -10,6 +10,7 @@
 
 | 方式 | 操作 | 适用 |
 | --- | --- | --- |
+| **在线试玩** | 打开 https://classkow.github.io/karting/ | 手机/电脑直接玩，无需下载 |
 | **双击即看** | 双击项目里的 `start.bat`（或直接双击 `dist/index.html`） | 观看 / 分发给别人，无需任何环境 |
 | 本地预览 | `npm run build && npm run preview`，访问终端提示地址 | 模拟服务器环境 |
 | 二次开发 | `npm install` 后 `npm run dev`，访问终端提示地址 | 修改代码 |
