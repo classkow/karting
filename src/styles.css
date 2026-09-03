@@ -994,6 +994,11 @@ input[type='range']:focus-visible {
     transform: rotate(-135deg);
   }
 
+  /* "视图与机构"独立区块折叠:箭头指向 + 提示可点 */
+  #control-panel .panel-head.sec-collapsed::after {
+    transform: rotate(-135deg);
+  }
+
   #parts-panel.panel-collapsed {
     bottom: auto;
   }

@@ -404,4 +404,28 @@ export function initPanelCollapse() {
     apply();
     mq.addEventListener?.('change', apply);
   }
+
+  // 小屏下面板的第二个区块标题（"视图与机构"）作为独立的手风琴折叠：
+  // 控制面板折叠只绑了第一个 .panel-head（querySelector 取首个），
+  // 这个标题原来点了没反应——触屏用户会认为标签坏了。
+  const cp = document.querySelector('#control-panel');
+  const head2 = cp?.querySelectorAll('.panel-head')[1];
+  if (!head2) return;
+  const sectionBlocks = () => {
+    // 标题之后的所有兄弟区块（ctl-block），直到面板末尾
+    const blocks = [];
+    let n = head2.nextElementSibling;
+    while (n) { blocks.push(n); n = n.nextElementSibling; }
+    return blocks;
+  };
+  head2.addEventListener('click', () => {
+    if (!mq.matches) return; // 大屏面板常驻，不需要折叠
+    const collapsed = head2.classList.toggle('sec-collapsed');
+    sectionBlocks().forEach((b) => { b.style.display = collapsed ? 'none' : ''; });
+  });
+  // 跨断点时清掉内联显示，交还 CSS 布局
+  mq.addEventListener?.('change', () => {
+    head2.classList.remove('sec-collapsed');
+    sectionBlocks().forEach((b) => { b.style.display = ''; });
+  });
 }
