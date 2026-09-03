@@ -1003,3 +1003,39 @@ input[type='range']:focus-visible {
     display: none;
   }
 }
+
+/* ————— 动效敏感用户：关掉装饰性动画与过渡（相机补间/自动环绕在 app.js 处理）————— */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ————— WebGL 上下文丢失遮罩 ————— */
+#gl-lost {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 7, 11, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+}
+#gl-lost.hidden { display: none; }
+#gl-lost .gl-lost-card {
+  color: var(--ink, #e8edf4);
+  text-align: center;
+  max-width: 30em;
+  padding: 0 2em;
+  line-height: 1.8;
+}
+#gl-lost b { font-size: 17px; }
+#gl-lost p { color: #8fa0b4; font-size: 13px; margin: 10px 0; }
+#gl-lost .gl-lost-sub { font-size: 11px; color: #5c6b7d; }
+#gl-lost button { cursor: pointer; margin-top: 6px; }
+
+

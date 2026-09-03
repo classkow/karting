@@ -16,6 +16,14 @@
       #loader p{color:#8fa0b4;font-size:13px;text-align:center;max-width:36em;padding:0 2em;line-height:1.8}
       .spin{transform-origin:18px 18px;animation:kart-spin 1.1s linear infinite}
       @keyframes kart-spin{to{transform:rotate(360deg)}}
+      /* WebGL 上下文丢失遮罩（兜底样式，数值与 styles.css 一致） */
+      #gl-lost{position:fixed;inset:0;background:rgba(5,7,11,.88);display:flex;align-items:center;justify-content:center;z-index:110}
+      #gl-lost.hidden{display:none}
+      #gl-lost .gl-lost-card{color:#e8edf4;text-align:center;max-width:30em;padding:0 2em;line-height:1.8}
+      #gl-lost b{font-size:17px}
+      #gl-lost p{color:#8fa0b4;font-size:13px;margin:10px 0}
+      #gl-lost .gl-lost-sub{font-size:11px;color:#5c6b7d}
+      #gl-lost button{cursor:pointer;margin-top:6px}
     </style>
   </head>
   <body>
@@ -66,6 +74,15 @@
           </svg>
         </div>
         <p>正在装配卡丁车…</p>
+      </div>
+
+      <div id="gl-lost" class="hidden">
+        <div class="gl-lost-card">
+          <b>渲染已中断</b>
+          <p>图形上下文丢失（可能是驱动重置或浏览器回收了 GPU 资源）。</p>
+          <button id="gl-restore" class="ghost">尝试恢复</button>
+          <p class="gl-lost-sub">若恢复无效，请刷新页面重试。</p>
+        </div>
       </div>
 
       <script>

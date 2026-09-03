@@ -1,4 +1,6 @@
 import { SYSTEMS, systemMeta } from '../kart/registry.js';
+import { VIEWS } from '../interaction/views.js';
+import { CLUTCH_ENGAGE_RPM } from '../sim/state.js';
 import { icon } from './icons.js';
 
 // ————— UI 面板：部件清单 / 控制台（转速表）/ 信息卡 / 工具提示 / 帮助 —————
@@ -29,7 +31,7 @@ export function initPartsPanel(container, registry, { onSelect, onFocus, onHover
     const sec = document.createElement('section');
     sec.className = 'sys-sec';
     sec.innerHTML = `
-      <div class="sys-head" role="button" tabindex="0">
+      <div class="sys-head" role="button" tabindex="0" aria-expanded="true">
         <span class="sys-dot" style="background:${sys.color}"></span>
         <span class="sys-label">${sys.label}</span>
         <span class="sys-count">${parts.length}</span>
@@ -69,7 +71,18 @@ export function initPartsPanel(container, registry, { onSelect, onFocus, onHover
       body.appendChild(row);
       rowEls.set(p.id, row);
     }
-    sec.querySelector('.sys-head').addEventListener('click', () => sec.classList.toggle('collapsed'));
+    const head = sec.querySelector('.sys-head');
+    const toggle = () => {
+      const collapsed = sec.classList.toggle('collapsed');
+      head.setAttribute('aria-expanded', String(!collapsed));
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault(); // 空格默认滚屏，Enter 默认无操作；统一转为折叠切换
+        toggle();
+      }
+    });
     list.appendChild(sec);
   }
 
@@ -174,14 +187,9 @@ export function initControlPanel(container, api) {
         <input id="rg-explode" type="range" min="0" max="100" value="0" data-accent="explode"/>
       </div>
       <div class="view-chips" id="view-chips">
-        <button data-view="home" class="vchip active">整车</button>
-        <button data-view="front" class="vchip">车头</button>
-        <button data-view="engine" class="vchip">动力</button>
-        <button data-view="drive" class="vchip">传动</button>
-        <button data-view="steer" class="vchip">转向</button>
-        <button data-view="brake" class="vchip">制动</button>
-        <button data-view="cockpit" class="vchip">座舱</button>
-        <button data-view="top" class="vchip">俯视</button>
+        ${Object.entries(VIEWS).map(([id, v], i) =>
+          `<button data-view="${id}" class="vchip${i === 0 ? ' active' : ''}" data-key="${i + 1}">${v.label}</button>`
+        ).join('')}
       </div>
       <div class="toggle-row">
         <button id="tg-rotate" class="tg">${icon('rotate', 13)}<span>自动环绕</span></button>
@@ -236,7 +244,7 @@ export function initControlPanel(container, api) {
     btnEngine.querySelector('.eb-ic').innerHTML = icon(on ? 'stop' : 'play', 16);
     btnEngine.querySelector('b').textContent = on ? '熄火' : cranking ? '起动中…' : '启动发动机';
     $('#engine-sub').textContent = on ? '发动机运转中 · 观察剖视缸内活塞' : cranking ? '起动机拖转中…' : '起动机拖转后怠速运行';
-    stGear.textContent = on ? (api.getRpm?.() > 3900 ? '接合' : '分离') : '未运转';
+    stGear.textContent = on ? (api.getRpm?.() > CLUTCH_ENGAGE_RPM ? '接合' : '分离') : '未运转';
   }
 
   function setSteerUI(v) {
@@ -252,7 +260,7 @@ export function initControlPanel(container, api) {
       needle.setAttribute('transform', `rotate(${-120 + v * 240} 130 118)`);
       tachRpm.textContent = Math.round(rpm).toLocaleString('zh-CN');
       stSpeed.textContent = speedKmh.toFixed(1);
-      if (engineOn) stGear.textContent = rpm > 3900 ? '接合' : '分离';
+      if (engineOn) stGear.textContent = rpm > CLUTCH_ENGAGE_RPM ? '接合' : '分离';
     },
     setEngineUI,
     setThrottleUI(v) {

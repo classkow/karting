@@ -69,8 +69,6 @@ export const M = {
     transmission: 1.0, thickness: 0.004, ior: 1.45,
     side: THREE.DoubleSide, envMapIntensity: 1.2,
   }),
-  // 火花塞陶瓷
-  ceramic: new THREE.MeshPhysicalMaterial({ color: 0xf2efe8, metalness: 0.0, roughness: 0.28, clearcoat: 0.6 }),
   // 刹车盘
   brakeDisc: new THREE.MeshPhysicalMaterial({ color: 0x9aa0a8, metalness: 1.0, roughness: 0.42, envMapIntensity: 0.95 }),
   // 金黄铜（轴衬）

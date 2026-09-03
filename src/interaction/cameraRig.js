@@ -1,19 +1,9 @@
 import * as THREE from 'three';
+import { VIEWS } from './views.js';
 
 // ————— 相机：视角预设 + 平滑飞行补间 —————
 
-export const VIEWS = {
-  home:    { label: '整车', pos: [2.7, 1.15, 2.75], tgt: [0, 0.28, 0] },
-  front:   { label: '车头', pos: [0.85, 0.6, 3.2], tgt: [0, 0.25, 0.35] },
-  engine:  { label: '动力', pos: [1.62, 0.66, -0.5], tgt: [0.42, 0.2, -0.12] },
-  drive:   { label: '传动', pos: [1.75, 0.52, -0.95], tgt: [0.45, 0.16, -0.45] },
-  steer:   { label: '转向', pos: [1.25, 0.95, 1.7], tgt: [0, 0.22, 0.45] },
-  brake:   { label: '制动', pos: [-1.55, 0.55, -1.5], tgt: [-0.32, 0.16, -0.5] },
-  cockpit: { label: '座舱', pos: [0.9, 1.0, 0.62], tgt: [0, 0.34, 0.0] },
-  top:     { label: '俯视', pos: [0.02, 3.4, 0.03], tgt: [0, 0, 0] },
-};
-
-export function initCameraRig(camera, controls, { onStopAutoRotate } = {}) {
+export function initCameraRig(camera, controls, { onStopAutoRotate, instantFly = false } = {}) {
   let tween = null;
 
   function flyTo(pos, tgt, dur = 0.9) {
@@ -21,6 +11,12 @@ export function initCameraRig(camera, controls, { onStopAutoRotate } = {}) {
     if (controls.autoRotate) {
       controls.autoRotate = false;
       onStopAutoRotate?.();
+    }
+    // 动效敏感用户（prefers-reduced-motion）：直接落到目标位姿，不补间
+    if (instantFly) {
+      camera.position.set(...pos);
+      controls.target.set(...tgt);
+      return;
     }
     tween = {
       t: 0,

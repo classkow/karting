@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { createStage } from './core/stage.js';
 import { createPostFX } from './core/postfx.js';
-import { updateEngineAudio } from './core/audio.js';
+import { updateEngineAudio, disposeEngineAudio } from './core/audio.js';
 import { createFpsGuard } from './core/fpsGuard.js';
 import { buildKart } from './kart/builder.js';
-import { createRegistry } from './kart/registry.js';
+import { createRegistry, systemMeta } from './kart/registry.js';
 import { createSim } from './sim/state.js';
 import { initExplode } from './interaction/explode.js';
 import { initPicking } from './interaction/picking.js';
@@ -40,6 +40,9 @@ export function createApp() {
   const noopPass = { selectedObjects: [] }; // 无后期链时的高亮占位
   let usePostfx = false; // 控制面板初始化后按偏好确定
 
+  // 动效敏感用户：默认不自动环绕，相机切换改为直切（无补间）
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   const registry = createRegistry();
   const sim = createSim();
   const kart = buildKart(registry);
@@ -50,6 +53,7 @@ export function createApp() {
   let ctrl = null;
   const rig = initCameraRig(camera, controls, {
     onStopAutoRotate: () => ctrl?.setRotateUI(false),
+    instantFly: reduceMotion,
   });
 
   // ————— UI —————
@@ -141,7 +145,7 @@ export function createApp() {
   usePostfx = prefs.quality && !!fx;
   ctrl.setQualityUI(prefs.quality);
   ctrl.setSoundUI(prefs.sound);
-  ctrl.setRotateUI(true);
+  ctrl.setRotateUI(!reduceMotion);
 
   const help = initHelp(document.getElementById('help-overlay'));
   document.getElementById('btn-help').addEventListener('click', () => help.toggle());
@@ -164,8 +168,7 @@ export function createApp() {
     onHover(id, x, y) {
       if (id) {
         const p = registry.getPart(id);
-        const sysColor = { chassis: '#e0564f', wheels: '#aeb8c6', steering: '#4cc2ff', engine: '#ffb547', drivetrain: '#c9a24b', brakes: '#ff5d5d', cockpit: '#8fd460' }[p.system] ?? '#888';
-        tooltip.move(x ?? lastPointer[0], y ?? lastPointer[1], p.name, sysColor);
+        tooltip.move(x ?? lastPointer[0], y ?? lastPointer[1], p.name, systemMeta(p.system).color);
       } else {
         tooltip.hide();
       }
@@ -264,6 +267,27 @@ export function createApp() {
     if (running) clock.getDelta();
   });
 
+  // 卸载/进 bfcache 时释放音频资源；从 bfcache 恢复后 ctx/nodes 为空，会自动重建
+  window.addEventListener('pagehide', disposeEngineAudio);
+
+  // ————— WebGL 上下文丢失恢复 —————
+  // 驱动重置 / GPU 进程崩溃 / 移动端后台回收：不停主循环会持续报错并黑屏，
+  // 停下来弹遮罩给用户一条可操作的恢复路径。丢失期间丢掉累积 dt，恢复后不跳帧。
+  const glLostOverlay = document.getElementById('gl-lost');
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault(); // 允许之后触发 webglcontextrestored
+    running = false;
+    glLostOverlay.classList.remove('hidden');
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    clock.getDelta(); // 丢弃中断期 dt，恢复瞬间不快进
+    running = true;
+    glLostOverlay.classList.add('hidden');
+  });
+  document.getElementById('gl-restore').addEventListener('click', () => {
+    renderer.forceContextRestore();
+  });
+
   window.addEventListener('resize', () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -271,11 +295,13 @@ export function createApp() {
     fx?.setSize(w, h);
   });
 
-  // ————— 开场：装配完成后推进镜头 —————
-  controls.autoRotate = true;
-  setTimeout(() => {
-    rig.applyView('home', 1.3);
-  }, 250);
+  // ————— 开场：装配完成后推进镜头（reduce-motion 用户已在初始位姿，跳过）—————
+  controls.autoRotate = !reduceMotion;
+  if (!reduceMotion) {
+    setTimeout(() => {
+      rig.applyView('home', 1.3);
+    }, 250);
+  }
 
   loop();
 
