@@ -132,8 +132,10 @@ async function main() {
     { cwd: ROOT, stdio: 'pipe' });
   previewRef = preview;
   let previewReady = false;
-  // vite 会把 ANSI 色码插进 "Local" 与 ":" 之间（Local\x1b[22m:），先剥色码再匹配
-  preview.stdout.on('data', (d) => { if (String(d).replace(/\x1b\[[0-9;]*m/g, '').includes('Local:')) previewReady = true; });
+  // vite 会把 ANSI 色码插进 "Local" 与 ":" 之间（Local\x1b[22m:），先剥色码再匹配。
+  // eslint-disable-next-line no-control-regex -- 匹配 ANSI 控制字符是本行的唯一目的
+  const ANSI = /\x1b\[[0-9;]*m/g;
+  preview.stdout.on('data', (d) => { if (String(d).replace(ANSI, '').includes('Local:')) previewReady = true; });
   await waitFor(() => previewReady, 'vite preview 就绪');
 
   // 2. 拉起 headless Chrome（配置目录随进程号唯一，避免与残留孤儿抢锁）
