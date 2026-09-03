@@ -81,12 +81,12 @@ export function buildChassis(root, reg) {
   seat.add(shell);
   // 坐垫与靠背软垫:位置/倾角按壳体内表面实测拟合(射线扫描),零穿模
   const cush = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.035, 0.19, 3, 0.014), M.fabric);
-  cush.position.set(-0.15, 0.225, 0.02);
+  cush.position.set(0, 0.225, 0.02);
   const backLo = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.17, 0.02, 3, 0.01), M.fabric);
-  backLo.position.set(-0.15, 0.371, -0.082);
+  backLo.position.set(0, 0.371, -0.082);
   backLo.rotation.x = -0.369; // 腰背段后仰,前面贴住内表面
   const backHi = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.11, 0.02, 3, 0.01), M.fabric);
-  backHi.position.set(-0.15, 0.498, -0.123);
+  backHi.position.set(0, 0.498, -0.123);
   backHi.rotation.x = -0.226; // 肩靠段趋直,前面贴住内表面
   seat.add(cush, backLo, backHi);
   seat.position.set(0, 0, L.seatZ);
