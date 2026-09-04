@@ -922,17 +922,17 @@ input[type='range']:focus-visible {
 }
 
 @media (max-width: 880px) {
-  /* 收窄左侧部件清单，给右侧控制台让出水平空间（390px 视口下右缘 138px） */
+  /* 收窄左侧部件清单，给右侧控制台让出水平空间（390px 视口下右缘 166px） */
   #parts-panel {
-    width: 124px;
+    width: 152px;
   }
   /* 触屏无 hover，副文案提示无意义且会折行撑高标题条 */
   #parts-panel .ph-sub {
     display: none;
   }
-  /* 控制台随视口收缩，窄屏不再与部件清单叠合：390px→230px，320px→160px，≥400px→240px */
+  /* 控制台随视口收缩，窄屏不再与部件清单叠合：390px→196px，320px→126px，≥434px→240px */
   #control-panel {
-    width: min(calc(100vw - 160px), 240px);
+    width: min(calc(100vw - 194px), 240px);
   }
   #info-card {
     left: 14px;
