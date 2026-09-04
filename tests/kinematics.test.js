@@ -3,13 +3,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pistonStroke, chainPath, solveSteeringAngle } from '../src/sim/kinematics.js';
+import { L } from '../src/kart/layout.js';
 
-const R = 0.027;   // 曲柄半径（同 layout.js）
-const LROD = 0.105; // 连杆长度
+const R = L.crankR;    // 曲柄半径（同源 layout.js）
+const LROD = L.rodLen; // 连杆长度（同源 layout.js）
 
-// 与实车一致的链轮布置（曲轴链轮 → 后链轮）
-const C1 = { y: 0.165, z: -0.31, r: 0.0224 };
-const C2 = { y: 0.145, z: -0.53, r: 0.124 };
+// 与实车一致的链轮布置（曲轴链轮 → 后链轮），常量全部同源 layout.js（对照 drivetrain.js 链条包络调用处）
+const C1 = { y: L.engine.y, z: L.engine.z - 0.11, r: L.clutchR }; // -0.11 为离合器轴向偏移：layout 无此字段，手抄同步（engine.js 离合器 position）
+const C2 = { y: L.axleY, z: L.rearAxleZ, r: L.sprocketR };
 
 test('曲柄滑块：上下止点解析值', () => {
   assert.ok(Math.abs(pistonStroke(Math.PI / 2, R, LROD) - (R + LROD)) < 1e-12, '上止点 = R + L');
@@ -28,6 +29,9 @@ test('曲柄滑块：全周连续且杆长约束恒成立', () => {
 });
 
 test('链条包络：总长为正且路径闭合、相位可回绕', () => {
+  // 常量契约（先例：state.test.js 守 CLUTCH_ENGAGE_RPM）：layout 调参必须变红，杜绝"静默全绿"假保护
+  assert.equal(C1.r, 0.0224, '曲轴链轮 12T 节圆半径契约');
+  assert.equal(C2.r, 0.1232, '后链轮 66T 节圆半径契约（= CLUTCH_R × 66/12）');
   const p = chainPath(C1, C2);
   assert.ok(p.total > 0);
   const a = p.pointAt(0);
