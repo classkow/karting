@@ -20,6 +20,11 @@ export function createSim() {
     throttle: 0,
     steer: 0,
     steerSmooth: 0,
+    steerAngleL: 0, // 左前轮解算转向角（rad），由转向更新器每帧写入，供举升姿态解算读取
+    steerAngleR: 0, // 右前轮同上
+    jackingDemo: 0,   // 主销举升演示开关（0=关，1=开）
+    jackingScale: 1,  // 教学放大倍率（1/4/8）——只放大显示姿态，UI 毫米读数永远报真实值
+    jackingLiftMM: 0, // 内侧后轮离地量真实解算值（mm），jacking 更新器每帧写入
     brakeTarget: 0,
     brake: 0,
     rpm: 0,

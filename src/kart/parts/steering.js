@@ -13,6 +13,8 @@ import { buildWheel } from './wheels.js';
 const KP_Y = L.kingpinY;          // 主销高度
 const KP_X = L.kingpinX;
 const KP_Z = L.frontAxleZ;
+const KPI = L.kingpinKPI;         // 主销内倾（正视上端向内）
+const CASTER = L.kingpinCaster;   // 主销后倾（侧视上端向后）
 const ARM = 0.13;                 // 转向臂长（指向车尾）
 const ARM_Y = -0.003;
 const ARM_IN = 0.034;             // 转向臂内倾量（梯形布置 → 阿克曼几何）
@@ -28,28 +30,50 @@ const _rackEnd = new THREE.Vector3();
 const _mid = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _UP = new THREE.Vector3(0, 1, 0);
+const _X = new THREE.Vector3(1, 0, 0);
+const _Z = new THREE.Vector3(0, 0, 1);
+const _qYaw = new THREE.Quaternion();
+const _qAxis = new THREE.Quaternion();
 
+// 主销倾斜四元数 Q_tilt = Q_z(sign·KPI) × Q_x(−caster)（先绕 x 后绕 z）：
+// 右手系下绕 +x 正转把 +y 带向 +z（车头），故"上端向后"取 −caster；
+// 左轮 sign=−1 时上端 +x（向内），右轮镜像。视觉验收：主销上端相对下端向内且向后。
+// 与 kinematics.js 的 kingpinAxis（同款合成施加于 +y）互为渲染侧/解算侧同一几何。
+function kingpinTilt(sign) {
+  return new THREE.Quaternion()
+    .setFromAxisAngle(_Z, sign * KPI)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(_X, -CASTER));
+}
+
+// 转向节拆两层：knuckleMount（固定侧，注册部件本体，爆炸位移作用于它）承载倾斜的主销
+// 视觉件；steerGroup（转动侧，子级）承载转向臂/球铰/前轮。直行位前轮保持竖直（主销与
+// 轮轴夹角由转向节结构吸收，真车同理），偏转 = 绕倾斜主销轴转 a，即世界姿态
+// R_axis(a) = Q_tilt·Q_yaw(a)·Q_tilt⁻¹——相对直行位恰为绕斜轴的纯旋转。
 function buildSpindle(reg, side) {
   const sign = side === 'L' ? -1 : 1;
-  const pivot = new THREE.Group();
-  pivot.position.set(sign * KP_X, KP_Y, KP_Z);
+  const qTilt = kingpinTilt(sign);
+  const mount = new THREE.Group();
+  mount.position.set(sign * KP_X, KP_Y, KP_Z);
+  mount.quaternion.copy(qTilt);
   const kingpin = mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.115, 12), M.chrome, 0, 0, 0);
   const boss = mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.055, 14), M.alu, 0, 0, 0);
-  pivot.add(kingpin, boss);
+  mount.add(kingpin, boss);
+  const steer = new THREE.Group();
+  mount.add(steer);
   // 转向臂（指向车尾并内倾，构成阿克曼梯形）
   const armDir = Math.atan2(-sign * ARM_IN, -ARM); // 相对 -z 的偏转角
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.014, Math.hypot(ARM, ARM_IN)), M.steel);
   arm.position.set(-sign * ARM_IN / 2, ARM_Y, -ARM / 2);
   arm.rotation.y = armDir;
-  pivot.add(arm);
+  steer.add(arm);
   // 臂端球铰
   const ball = mesh(new THREE.SphereGeometry(0.0115, 14, 10), M.zinc, -sign * ARM_IN, ARM_Y, -ARM);
-  pivot.add(ball);
+  steer.add(ball);
   // 前轮（随转向节偏转。卡丁车是后驱车：展示台静止场景下前轮无动力、不空转，
   // 只有后轮被链条驱动——前轮不做滚动更新是有意为之，不是漏了）
   const wheel = buildWheel(L.wheelF.r, L.wheelF.w);
   wheel.position.set(0, L.wheelF.r - KP_Y, 0);
-  pivot.add(wheel);
+  steer.add(wheel);
   const wid = side === 'L' ? 'wheel-fl' : 'wheel-fr';
   reg.registerPart(wheel, {
     id: wid, name: side === 'L' ? '左前轮' : '右前轮', system: 'wheels',
@@ -57,8 +81,8 @@ function buildSpindle(reg, side) {
     specs: [['规格', '5.0 × 5 光头胎'], ['驱动', '无（仅转向）']],
     desc: '前轮通过轮毂轴承浮套在转向节上，没有驱动也没有制动——卡丁车是后驱车，所以在展示台上空转的只有后轮。前轮外倾角与前束都接近 0°，一切以滚阻最小、指向最准为目标。',
   });
-  refs[side] = { pivot, wheel };
-  return pivot;
+  refs[side] = { mount, steer, wheel, qTilt, qTiltInv: qTilt.clone().invert() };
+  return mount;
 }
 
 export function buildSteering(root, reg) {
@@ -131,18 +155,18 @@ export function buildSteering(root, reg) {
   });
 
   // —— 转向节（左右）——
-  const pivotL = buildSpindle(reg, 'L');
-  const pivotR = buildSpindle(reg, 'R');
-  root.add(pivotL, pivotR);
-  reg.registerPart(pivotL, {
+  const mountL = buildSpindle(reg, 'L');
+  const mountR = buildSpindle(reg, 'R');
+  root.add(mountL, mountR);
+  reg.registerPart(mountL, {
     id: 'spindle-l', name: '左转向节', system: 'steering', explodeDir: [-1, 0.3, 0.3], explodeDist: 0.45,
-    specs: [['别名', '羊角'], ['运动', '绕主销偏转']],
-    desc: '转向节通过主销（竖直销轴）安装在车架前部，前轮经轴承装在它上面。拉杆推动转向臂，整个转向节绕主销偏转——前轮指向前方哪里，由这几十毫米的臂长和拉杆几何精确决定。',
+    specs: [['别名', '羊角'], ['运动', '绕倾斜主销偏转（内倾10°/后倾12°）']],
+    desc: '转向节通过主销安装在车架前部，前轮经轴承装在它上面。拉杆推动转向臂，整个转向节绕主销偏转——前轮指向前方哪里，由这几十毫米的臂长和拉杆几何精确决定。主销并非竖直——内倾约 10°、后倾约 12°。打方向时前轮绕斜轴转动会把车架顶起（举升效应），刚性车架把侧倾传到后轴，内侧后轮因此离地——这就是没有差速器的卡丁车也能顺利过弯的原因。打开「主销举升演示」打满方向，盯着内侧后轮看。',
   });
-  reg.registerPart(pivotR, {
+  reg.registerPart(mountR, {
     id: 'spindle-r', name: '右转向节', system: 'steering', explodeDir: [1, 0.3, 0.3], explodeDist: 0.45,
-    specs: [['别名', '羊角'], ['运动', '绕主销偏转']],
-    desc: '转向节通过主销安装在车架前部，是前轮的承载与转向枢纽。左右转向节臂、两根拉杆与齿条构成一组空间四连杆机构。',
+    specs: [['别名', '羊角'], ['运动', '绕倾斜主销偏转（内倾10°/后倾12°）']],
+    desc: '转向节通过主销安装在车架前部，是前轮的承载与转向枢纽。左右转向节臂、两根拉杆与齿条构成一组空间四连杆机构。与左侧相同，主销带约 10° 内倾与 12° 后倾——打方向时前轮绕斜轴转动产生举升效应，把内侧后轮抬离地面（打开「主销举升演示」可实测真实离地毫米数）。',
   });
 
   // —— 左右拉杆（杆身 + 齿条端球铰 合并为一个部件组）——
@@ -187,7 +211,7 @@ export function buildSteering(root, reg) {
 
     for (const side of ['L', 'R']) {
       const sign = side === 'L' ? -1 : 1;
-      const pivot = refs[side].pivot;
+      const { mount, steer, qTilt, qTiltInv } = refs[side];
       const tie = side === 'L' ? refs.tieL : refs.tieR;
       const rodLen = side === 'L' ? refs.rodLenL : refs.rodLenR;
 
@@ -201,11 +225,20 @@ export function buildSteering(root, reg) {
         a0: refs['angle' + side],
       });
       refs['angle' + side] = a;
-      pivot.rotation.y = a;
+      if (side === 'L') s.steerAngleL = a; else s.steerAngleR = a; // 供举升姿态解算读取
+
+      // 绕倾斜主销轴转 a：R_axis(a) = Q_tilt·Q_yaw(a)·Q_tilt⁻¹。
+      // steerGroup 是 mount（自带 Q_tilt）的子级，局部四元数 = Q_tilt⁻¹·R_axis(a)，
+      // 直行位世界姿态恒等——前轮保持竖直，偏转时自然带上外倾变化。
+      // 已知近似：求解器解的是水平面几何（假设竖直轴）。主销倾斜 ≤12° 时臂端轨迹偏离
+      // 水平面 ≈ 臂长×(1−cos) 量级 < 3mm，对转角解的误差 <2%，演示口径够用，求解器不改。
+      _qYaw.setFromAxisAngle(_UP, a);
+      _qAxis.copy(qTilt).multiply(_qYaw).multiply(qTiltInv); // R_axis(a)
+      steer.quaternion.copy(qTiltInv).multiply(_qAxis);
 
       // 拉杆两端世界坐标（从邻居当前位置读取，含其爆炸偏移——爆炸位移由 explode
       // 统一写入各部件 position，此处读取的是上一帧的结果，过渡动画中有 1 帧松弛，不可察觉）
-      _armEnd.set(vx, ARM_Y, vz).applyAxisAngle(_UP, a).add(pivot.position);
+      _armEnd.set(vx, ARM_Y, vz).applyQuaternion(_qAxis).add(mount.position);
       const rg = refs.rackG.position; // rackG 组原点为 (0,0,0)，其 position 即整组爆炸偏移
       _rackEnd.set(sign * RACK_HALF + disp + rg.x, RACK_Y + rg.y, RACK_Z + rg.z);
 

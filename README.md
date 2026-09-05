@@ -22,8 +22,8 @@
 
 ## 功能
 
-- **机构演示**：二冲程发动机剖视（曲柄滑块精确解算）、滚子链链传动（链节沿开式包络与齿形链轮严格啮合）、齿轮齿条转向（拉杆按刚杆约束牛顿迭代求解，阿克曼几何自然涌现）、后轴碟刹（踏板-主缸-卡钳联动）。
-- **交互**：8 个视角预设、逐级爆炸分解、部件悬停高亮/点击讲解、部件清单（聚焦/隐藏）、转速仪表盘、自动环绕、键盘快捷键（空格启动、W/S 油门、A/D 转向——均可**长按持续输入**、B 刹车、E 爆炸、R 复位、1-8 视角、? 帮助）；小屏设备面板可折叠、帮助页含触屏手势说明。
+- **机构演示**：二冲程发动机剖视（曲柄滑块精确解算）、滚子链链传动（链节沿开式包络与齿形链轮严格啮合）、齿轮齿条转向（拉杆按刚杆约束牛顿迭代求解，阿克曼几何自然涌现）、后轴碟刹（踏板-主缸-卡钳联动）、主销举升效应（内倾/后倾主销 + 刚性车架解算车架姿态，打满方向时内侧后轮真实离地，毫米读数为真实解算值，教学放大有明示）。
+- **交互**：9 个视角预设、逐级爆炸分解、部件悬停高亮/点击讲解、部件清单（聚焦/隐藏）、转速仪表盘、自动环绕、键盘快捷键（空格启动、W/S 油门、A/D 转向——均可**长按持续输入**、B 刹车、E 爆炸、R 复位、1-8 视角、? 帮助）；小屏设备面板可折叠、帮助页含触屏手势说明。
 - **渲染**：IBL 环境光照 + ACES 色调映射 + GTAO/Bloom/描边后期链（可手动切换，持续低帧率时自动降级为直接渲染）、Canvas 程序化贴图（轮胎法线、拉丝金属、碳纤维、地台刻度）、WebAudio 合成引擎声。
 - **健壮性**：启动守护（双击源码入口 / 不支持 WebGL2 时给出可操作指引）、localStorage 访问兜底、后期链失败自动降级。
 
@@ -38,7 +38,7 @@ src/
 ├─ kart/          builder.js 整车装配 · layout.js 整车尺寸 · registry.js 部件注册表
 │  ├─ geometry.js 车床/链轮/刹车盘等几何工具
 │  └─ parts/      chassis 车架 · bodywork 覆盖件 · wheels 车轮 · engine 发动机
-│                 drivetrain 传动 · steering 转向 · brakes 制动 · cockpit 操纵
+│                 drivetrain 传动 · steering 转向 · jacking 举升姿态 · brakes 制动 · cockpit 操纵
 ├─ sim/           state.js 转速状态机（起动/怠速/油门/传动比） · kinematics.js 机构运动学纯数学（可单测）
 ├─ interaction/   picking 拾取描边 · explode 爆炸 · cameraRig 相机 · shortcuts 快捷键
 ├─ ui/            panels.js 面板 · icons.js 图标
@@ -58,10 +58,10 @@ Procedurally modeled racing kart (CIK proportions) in interactive 3D — pure ru
 
 Highlights:
 
-- **Mechanisms, not animations**: crank-slider solved analytically, roller chain strictly meshing tooth-shaped sprockets along an open envelope, rack-and-pinion steering with tie rods solved by fixed-length Newton iteration (Ackermann geometry emerges naturally), pedal–master-cylinder–caliper brake linkage.
-- **Interaction**: 8 camera presets, progressive exploded view, hover highlight & per-part engineering explainers, tachometer, keyboard driving with **hold-to-steer / hold-throttle** (Space start/stop, W/S throttle, A/D steer, B brake, E explode, R reset, 1–8 presets, ? help).
+- **Mechanisms, not animations**: crank-slider solved analytically, roller chain strictly meshing tooth-shaped sprockets along an open envelope, rack-and-pinion steering with tie rods solved by fixed-length Newton iteration (Ackermann geometry emerges naturally), pedal–master-cylinder–caliper brake linkage, and kingpin jacking — inclined kingpins (KPI/caster) lift the rigid frame when steering, genuinely unloading the inside rear wheel (real solved millimetres; optional teaching magnification is always labelled).
+- **Interaction**: 9 camera presets, progressive exploded view, hover highlight & per-part engineering explainers, tachometer, keyboard driving with **hold-to-steer / hold-throttle** (Space start/stop, W/S throttle, A/D steer, B brake, E explode, R reset, 1–8 presets, ? help).
 - **Rendering**: IBL + ACES tone mapping + GTAO/Bloom/outline post chain (auto-degrades on sustained low FPS), canvas-generated textures (tire normals, brushed metal, carbon fiber, platform dial), WebAudio-synthesized engine sound.
-- **Engineering quality**: 16 kinematics & state-machine unit tests (`npm test`), zero-dependency headless smoke test with regression cases (`npm run smoke`), ESLint clean, GitHub Actions gate on every push (`.github/workflows/ci.yml`).
+- **Engineering quality**: 23 kinematics & state-machine unit tests (`npm test`), zero-dependency headless smoke test with regression cases (`npm run smoke`), ESLint clean, GitHub Actions gate on every push (`.github/workflows/ci.yml`).
 
 ## License
 

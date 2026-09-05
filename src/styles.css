@@ -547,6 +547,15 @@ input[type='range']::-moz-range-thumb {
   margin-bottom: 10px;
 }
 
+.toggle-row.jacking-row {
+  grid-template-columns: 1.5fr 1fr;
+  margin-bottom: 0;
+}
+
+.jacking-readout {
+  margin-bottom: 10px;
+}
+
 .tg {
   display: flex;
   align-items: center;
@@ -568,6 +577,14 @@ input[type='range']::-moz-range-thumb {
   border-color: rgba(76, 194, 255, 0.45);
   background: rgba(76, 194, 255, 0.09);
   color: var(--cyan);
+}
+
+/* "教学放大"小字标注（信誉红线：放大必须明示） */
+.tg-mini {
+  font-size: 9px;
+  font-style: normal;
+  opacity: 0.72;
+  margin-left: 4px;
 }
 
 .ghost {

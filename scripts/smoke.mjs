@@ -191,15 +191,43 @@ async function main() {
       `origin=(${axlePos.x}, ${axlePos.y}, ${axlePos.z})`);
 
     // 4. 阿克曼：满舵时左右轮转角不相等
+    // （转向节拆两层后绕倾斜主销轴以四元数偏转，注册组 rotation.y 恒为 0——
+    //   改读转向更新器写入 sim 的解算角；断言阈值与语义不变）
     await evalJs(rpc, '__kart.sim.steer = 1; "ok"');
     await pump(20);
     const steer = JSON.parse(await evalJs(rpc, `JSON.stringify({
-      l: __kart.getPart('spindle-l').group.rotation.y,
-      r: __kart.getPart('spindle-r').group.rotation.y,
+      l: __kart.sim.steerAngleL,
+      r: __kart.sim.steerAngleR,
     })`));
     check('阿克曼几何: 满舵左右轮转角不同', Math.abs(Math.abs(steer.l) - Math.abs(steer.r)) > 0.01,
       `L=${steer.l.toFixed(4)} R=${steer.r.toFixed(4)}`);
     await evalJs(rpc, '__kart.sim.steer = 0; "ok"');
+    await pump(20);
+
+    // 4.5 主销举升：开演示（走面板按钮）、打满左舵（steer=1 → 左转，内侧=左后轮 wheel-rl），
+    // 断言簧载姿态非恒等且内侧后轮世界 y 真实升高。
+    // 手动泵帧 render=false 不更新 matrixWorld，读取前需 updateWorldMatrix 沿父链刷新。
+    const worldSample = (id) => evalJs(rpc, `(() => {
+      const g = __kart.getPart('${id}').group;
+      g.updateWorldMatrix(true, false);
+      const e = g.matrixWorld.elements;
+      // 旋转非对角元范数（列主序：恒等时全为 0，姿态变化时非零）
+      return JSON.stringify({ y: e[13], rot: Math.hypot(e[1], e[2], e[4], e[6], e[8], e[9]) });
+    })()`).then(JSON.parse);
+    const baseRL = await worldSample('wheel-rl');
+    const baseFrame = await worldSample('frame');
+    await evalJs(rpc, `document.getElementById('tg-jacking').click(); "ok"`);
+    await evalJs(rpc, '__kart.sim.steer = 1; "ok"');
+    await pump(30); // steerSmooth 收敛（速率 7/s，1s 足够）
+    const liftRL = await worldSample('wheel-rl');
+    const liftFrame = await worldSample('frame');
+    check('主销举升: 簧载组姿态非恒等', Math.abs(liftFrame.rot - baseFrame.rot) > 1e-4,
+      `车架矩阵旋转项 ${baseFrame.rot.toExponential(2)} → ${liftFrame.rot.toExponential(2)}`);
+    check('主销举升: 内侧后轮（wheel-rl）世界 y 升高 > 0.5mm', liftRL.y - baseRL.y > 0.0005,
+      `y ${(baseRL.y * 1000).toFixed(2)}mm → ${(liftRL.y * 1000).toFixed(2)}mm（Δ=${((liftRL.y - baseRL.y) * 1000).toFixed(2)}mm）`);
+    // 还原：回正 + 关演示，避免污染后续装配态截图
+    await evalJs(rpc, '__kart.sim.steer = 0; "ok"');
+    await evalJs(rpc, `document.getElementById('tg-jacking').click(); "ok"`);
     await pump(20);
 
     // 5. 装配态截图（整车 / 传动特写）

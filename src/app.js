@@ -140,6 +140,16 @@ export function createApp() {
     onView(name) {
       rig.applyView(name);
     },
+    onJacking() {
+      sim.jackingDemo = sim.jackingDemo ? 0 : 1;
+      ctrl.setJackingUI(sim.jackingDemo === 1, sim.jackingScale);
+      if (sim.jackingDemo) rig.applyView('jacking'); // 关闭时不强制切回视角
+    },
+    onJackingScale() {
+      const seq = [1, 4, 8];
+      sim.jackingScale = seq[(seq.indexOf(sim.jackingScale) + 1) % seq.length];
+      ctrl.setJackingUI(sim.jackingDemo === 1, sim.jackingScale);
+    },
     getRpm: () => sim.rpm,
   });
   usePostfx = prefs.quality && !!fx;
@@ -204,6 +214,7 @@ export function createApp() {
   let running = true;
   let wasRunning = false;
   let lastEngineState = -1;
+  let lastJackReadout = 0; // 举升读数节流（100ms）
 
   function frame(dt, rawDt = dt, render = true) {
     driveKeys.update(dt); // 长按 W/S/A/D 的持续输入
@@ -214,6 +225,12 @@ export function createApp() {
     controls.update();
 
     ctrl.frame(sim.rpm, sim.speedKmh, sim.engineOn);
+
+    // 举升读数：每帧解算、100ms 节流刷 DOM（真实值，不乘教学放大系数）
+    if (sim.jackingDemo && sim.time - lastJackReadout > 0.1) {
+      lastJackReadout = sim.time;
+      ctrl.setJackingLift(sim.jackingLiftMM);
+    }
 
     const engineActive = sim.engineOn || sim.cranking > 0;
     if (engineActive !== wasRunning) {

@@ -11,6 +11,10 @@ export const L = {
   rearAxleZ: -0.53,       // 后轴
   kingpinX: 0.585,        // 主销横向
   kingpinY: 0.135,
+  kingpinKPI: (10 * Math.PI) / 180,    // 主销内倾（正视上端向内）
+  kingpinCaster: (12 * Math.PI) / 180, // 主销后倾（侧视上端向后）
+  kingpinScrub: 0.015,    // 主销延线触地点到胎面中心的横向距（CIK 量级）
+  kingpinTrail: 0.02,     // 纵向拖距（接地点在主销延线触地点之后）
   axleY: 0.145,           // 后轴中心高
   rearTrack: 0.62,        // 后轮中心横向
 

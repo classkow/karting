@@ -82,3 +82,66 @@ export function solveSteeringAngle({ vx, vz, armY, rodLen, pivot, rackEnd, a0 = 
   }
   return Math.max(-clamp, Math.min(clamp, a));
 }
+
+// ————— 主销几何举升（kingpin jacking）—————
+// 主销并非竖直：内倾 KPI（正视上端向内）+ 后倾 caster（侧视上端向后）。
+// 前轮绕该斜轴偏转时，接地点画出的空间弧的最低点在直行位之下——接地点想往地面以下钻，
+// 地面不让，于是车架被顶起；刚性车架（无悬挂）把滚转经后轴传出，内侧后轮被抬离地面。
+// 这就是无差速器卡丁车能顺利过弯的真正原因：内侧后轮卸载后内外轮速差不再较劲。
+
+// 主销轴单位向量（指向上端）。合成：先绕 x 转 −caster、再绕 z 转 sign·KPI。
+// 右手系下绕 +x 正转把 +y 带向 +z（车头），故"上端向后（−z）"取 −caster；
+// 左轮 sign=−1 时上端 x 分量为 +（向内），右轮镜像。返回 [ux, uy, uz]。
+export function kingpinAxis({ kpi, caster, side }) {
+  return [
+    -side * Math.cos(caster) * Math.sin(kpi),
+    Math.cos(caster) * Math.cos(kpi),
+    -Math.sin(caster),
+  ];
+}
+
+// 单个前轮绕倾斜主销转 a 后，接地点相对直行位的下沉量（正值 = 想往地面以下钻）。
+// 接地点相对主销延线触地点的水平偏移 r = [side·scrub, 0, −trail]
+//（scrub：胎面中心在触地点外侧；trail：接地点在触地点后方，z 向车头故取负）。
+// Rodrigues 旋转（与 THREE.applyAxisAngle 同右手系约定），drop = r_y − r'_y。
+export function kingpinDrop(a, { u, scrub, trail, side }) {
+  const rx = side * scrub;
+  const rz = -trail;
+  const [ux, uy, uz] = u;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const crossY = uz * rx - ux * rz; // (u×r) 的 y 分量
+  const dot = ux * rx + uz * rz;    // u·r（r_y = 0）
+  const ry = crossY * s + uy * dot * (1 - c);
+  return -ry + 0; // +0 归一 IEEE 负零（a=0 时调用方做严格相等断言）
+}
+
+// 整车姿态解：左右前轮转向角 → 车架刚体三自由度（heave/roll/pitch，小角度线化，
+// 姿态角 <2° 完全成立）。支撑点 = 左前 + 右前 + 外侧后轮接地点，三点定平面
+// h(x,z) = heave − roll·x + pitch·z 使三点贴地；内侧后轮处平面高度即离地量。
+// 软过渡：t = clamp01(离地量 / 2mm)，姿态与离地量同乘 t——滑块微动时姿态不跳变。
+// a<0 为左转（前轮指向 −x），左转外侧 = 右后轮；直行（和为 0）时任意，取右后。
+export function solveChassisPose(aL, aR, geom) {
+  const { trackF, trackR, wheelbase, kpiGeom } = geom;
+  const dL = kingpinDrop(aL, { u: kingpinAxis({ ...kpiGeom, side: -1 }), ...kpiGeom, side: -1 });
+  const dR = kingpinDrop(aR, { u: kingpinAxis({ ...kpiGeom, side: 1 }), ...kpiGeom, side: 1 });
+  const zF = wheelbase / 2;
+  const zR = -wheelbase / 2;
+  const xOuter = aL + aR <= 0 ? trackR / 2 : -trackR / 2;
+  const xInner = -xOuter;
+
+  const roll = (dL - dR) / trackF;
+  const pitch = ((dL + dR) / 2 - roll * xOuter) / wheelbase;
+  const heave = (dL + dR) / 2 - pitch * zF;
+
+  const liftAt = (x) => heave - roll * x + pitch * zR;
+  const t = Math.min(1, Math.max(0, liftAt(xInner) / 0.002));
+  if (t === 0) return { heave: 0, roll: 0, pitch: 0, rearLiftL: 0, rearLiftR: 0 }; // 未离地 → 恒等（顺带归一 -0）
+  return {
+    heave: heave * t,
+    roll: roll * t,
+    pitch: pitch * t,
+    rearLiftL: liftAt(-trackR / 2) * t,
+    rearLiftR: liftAt(trackR / 2) * t,
+  };
+}

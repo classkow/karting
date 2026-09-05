@@ -196,6 +196,13 @@ export function initControlPanel(container, api) {
         <button id="tg-quality" class="tg on">${icon('cpu', 13)}<span>高画质</span></button>
         <button id="tg-sound" class="tg">${icon('volume-off', 13)}<span>音效</span></button>
       </div>
+      <div class="toggle-row jacking-row">
+        <button id="tg-jacking" class="tg">${icon('layers', 13)}<span>主销举升演示</span></button>
+        <button id="tg-jscale" class="tg" title="教学放大倍率（只放大显示姿态，毫米读数永远报真实值）"><span>放大 1×</span></button>
+      </div>
+      <div class="row jacking-readout">
+        <label>内侧后轮离地<span class="rv" id="v-jacking">—</span></label>
+      </div>
       <button id="btn-reset" class="ghost wide">${icon('home', 13)}视角复位</button>
     </div>
   `;
@@ -209,6 +216,9 @@ export function initControlPanel(container, api) {
   const tgRotate = $('#tg-rotate');
   const tgQuality = $('#tg-quality');
   const tgSound = $('#tg-sound');
+  const tgJacking = $('#tg-jacking');
+  const tgJscale = $('#tg-jscale');
+  const vJacking = $('#v-jacking');
 
   bindRange($('#rg-throttle'), (v) => api.onThrottle(v / 100));
   bindRange($('#rg-brake'), (v) => api.onBrake(v / 100));
@@ -230,6 +240,8 @@ export function initControlPanel(container, api) {
   tgRotate.addEventListener('click', () => api.onRotate());
   tgQuality.addEventListener('click', () => api.onQuality());
   tgSound.addEventListener('click', () => api.onSound());
+  tgJacking.addEventListener('click', () => api.onJacking());
+  tgJscale.addEventListener('click', () => api.onJackingScale());
   $('#btn-reset').addEventListener('click', () => api.onReset());
   $('#view-chips').addEventListener('click', (e) => {
     const btn = e.target.closest('.vchip');
@@ -291,6 +303,15 @@ export function initControlPanel(container, api) {
     setSoundUI(on) {
       tgSound.classList.toggle('on', on);
       tgSound.innerHTML = `${icon(on ? 'volume' : 'volume-off', 13)}<span>音效</span>`;
+    },
+    setJackingUI(on, scale) {
+      tgJacking.classList.toggle('on', on);
+      // 信誉红线：放大必须明示——>1× 时按钮带"教学放大"小字标注
+      tgJscale.innerHTML = `<span>放大 ${scale}×${scale > 1 ? '<i class="tg-mini">教学放大</i>' : ''}</span>`;
+      if (!on) vJacking.textContent = '—';
+    },
+    setJackingLift(mm) {
+      vJacking.textContent = `${mm.toFixed(1)} mm（真实解算值）`;
     },
   };
 }
@@ -380,6 +401,7 @@ export function initHelp(overlay) {
         <p><b>建议路线：</b>点击「启动发动机」拉高油门，观察透明气缸内的活塞与连杆；</p>
         <p>拖动「爆炸分解」把整车拆开，再逐个点击部件查看原理说明；</p>
         <p>拉满「转向」观察拉杆推动转向节——内外轮转角并不相同（阿克曼几何）。</p>
+        <p>打开「主销举升演示」并打满方向：倾斜主销（内倾/后倾）把车架顶起，内侧后轮真实离地——这就是无差速器卡丁车能过弯的原因（毫米读数为真实解算值，放大仅供教学）。</p>
       </div>
     </div>
   `;
