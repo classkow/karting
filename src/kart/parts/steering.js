@@ -15,9 +15,15 @@ const KP_X = L.kingpinX;
 const KP_Z = L.frontAxleZ;
 const KPI = L.kingpinKPI;         // 主销内倾（正视上端向内）
 const CASTER = L.kingpinCaster;   // 主销后倾（侧视上端向后）
-const ARM = 0.13;                 // 转向臂长（指向车尾）
-const ARM_Y = -0.003;
-const ARM_IN = 0.034;             // 转向臂内倾量（梯形布置 → 阿克曼几何）
+const ARM = 0.22;                 // 转向臂长（指向车尾）
+const ARM_Y = 0.002;
+const ARM_IN = 0.182;             // 转向臂内倾量（梯形布置 → 阿克曼几何）
+// 三值可行域被两侧夹死，收紧任一侧即无解（按 layout 尺寸实测推得）：
+// ① 球铰/臂身/拉杆退出前轮轮胎包络：臂身只能从轮辋桶外缘(ρ=0.0832)与胎圈(ρ=0.091)之间的
+//    开口穿过 → 斜率 ARM/ARM_IN ≲ 1.21，且 ARM_Y 越大臂身越早贴上轮辋桶（故取近轴高度）；
+// ② 内轮侧拉杆不得进入死点：|主销→臂端| + 拉杆定长 ≥ |主销→齿条端|max(0.394)，即臂端须落在
+//    以主销与齿条端为焦点的椭圆之外 → 斜率 ≲1.21 时臂端总长须 ≥ 0.28m。
+// 两式的交角即此处取值（改前 ARM=0.13/ARM_IN=0.034 的臂身斜率 3.8，只能穿胎而过）。
 const RACK_Y = L.rackY;
 const RACK_Z = L.rackZ;
 const RACK_HALF = 0.30;           // 齿条端球铰横向距离
