@@ -230,6 +230,57 @@ async function main() {
     await evalJs(rpc, `document.getElementById('tg-jacking').click(); "ok"`);
     await pump(20);
 
+    // 4.6 演示序列播放器：装载 jacking 脚本播放 → 举升段状态 → pointerdown 介入暂停 → stop 复位。
+    // （脚本定稿的举升动作在 t=11s，泵帧须越过该点；泵帧一律走 __kart.step，确定性推进）
+    await evalJs(rpc, `__kart.demoPlayer.loadAndPlay('jacking'); "ok"`);
+    check('演示播放器: 装载 jacking 脚本即进入播放态', (await evalJs(rpc, `__kart.demoPlayer.state`)) === 'playing');
+    await pump(375); // 375 × 1/30 = 12.5s，越过 t=11 的举升动作
+    const demoMid = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      state: __kart.demoPlayer.state,
+      time: __kart.demoPlayer.time,
+      jacking: __kart.sim.jackingDemo,
+      steer: __kart.sim.steer,
+      caption: document.getElementById('demo-caption').textContent,
+    })`));
+    check('演示播放器: 举升段开关打开、转向非零、字幕非空',
+      demoMid.jacking === 1 && demoMid.steer !== 0 && demoMid.caption.length > 0,
+      `state=${demoMid.state} t=${demoMid.time.toFixed(1)}s jacking=${demoMid.jacking} steer=${demoMid.steer} caption="${demoMid.caption}"`);
+
+    // 模拟手动介入：canvas pointerdown → 暂停且时间轴不再推进。
+    // 合成事件没有真实活动指针，OrbitControls 的 setPointerCapture 必然抛 NotFound——
+    // 派发期间临时桩掉捕获调用（配对 pointerup 复位控制器状态），避免假报错污染控制台检查。
+    await evalJs(rpc, `(() => {
+      const el = document.getElementById('scene');
+      const orig = el.setPointerCapture;
+      el.setPointerCapture = () => {};
+      try {
+        el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0, buttons: 1 }));
+        el.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0 }));
+      } finally {
+        el.setPointerCapture = orig;
+      }
+      return "ok";
+    })()`);
+    const demoPausedState = await evalJs(rpc, `__kart.demoPlayer.state`);
+    const demoPausedTime = await evalJs(rpc, `__kart.demoPlayer.time`);
+    await pump(15); // 暂停态下泵帧，时间轴必须冻结
+    const demoAfterTime = await evalJs(rpc, `__kart.demoPlayer.time`);
+    check('演示播放器: pointerdown 介入 → 暂停且时间轴冻结',
+      demoPausedState === 'paused' && Math.abs(demoAfterTime - demoPausedTime) < 1e-9,
+      `state=${demoPausedState} t ${demoPausedTime.toFixed(2)} → ${demoAfterTime.toFixed(2)}`);
+
+    // stop 复位：steer/throttle 归零、举升关闭
+    await evalJs(rpc, `__kart.demoPlayer.stop(); "ok"`);
+    await pump(10);
+    const demoReset = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      steer: __kart.sim.steer,
+      throttle: __kart.sim.throttle,
+      jacking: __kart.sim.jackingDemo,
+    })`));
+    check('演示播放器: stop 复位（转向/油门归零、举升关闭）',
+      demoReset.steer === 0 && demoReset.throttle === 0 && demoReset.jacking === 0,
+      `steer=${demoReset.steer} throttle=${demoReset.throttle} jacking=${demoReset.jacking}`);
+
     // 5. 装配态截图（整车 / 传动特写）
     async function shot(name, camPos, camTgt) {
       await evalJs(rpc, `(() => {

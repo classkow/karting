@@ -556,6 +556,22 @@ input[type='range']::-moz-range-thumb {
   margin-bottom: 10px;
 }
 
+/* 内外轮转角读数（阿克曼）：值较长，窄屏放不下时换行到 label 下方并右对齐；
+   回中时整行灰显（.dim 由 app 按解算值回中判定切换） */
+.steer-readout label {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.steer-readout .rv {
+  margin-left: auto;
+}
+
+.steer-readout.dim label,
+.steer-readout.dim .rv {
+  color: var(--faint);
+}
+
 .tg {
   display: flex;
   align-items: center;
@@ -585,6 +601,108 @@ input[type='range']::-moz-range-thumb {
   font-style: normal;
   opacity: 0.72;
   margin-left: 4px;
+}
+
+/* ————— 演示序列播放器 ————— */
+
+.demo-chips {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+
+.dchip {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: left;
+  transition: all 0.14s;
+}
+
+.dchip b {
+  font-weight: 600;
+}
+
+.dchip i {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.dchip:hover {
+  border-color: var(--stroke-strong);
+  color: var(--text);
+}
+
+.dchip.active {
+  border-color: rgba(255, 181, 71, 0.55);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.dchip.active i {
+  color: var(--accent);
+}
+
+.demo-play {
+  width: 100%;
+  margin-bottom: 9px;
+}
+
+.demo-play:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.demo-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: #232b36;
+  overflow: hidden;
+}
+
+.demo-progress i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+
+/* ————— 演示字幕浮层（画布底部居中，不依赖左右面板；小屏折叠时仍可见）————— */
+
+#demo-caption {
+  position: fixed;
+  left: 50%;
+  bottom: 46px;
+  transform: translateX(-50%);
+  max-width: min(720px, calc(100vw - 40px));
+  padding: 11px 22px;
+  background: rgba(5, 7, 11, 0.78);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: var(--blur);
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-wrap: balance;
+  z-index: 26;
+  pointer-events: none;
+}
+
+#demo-caption.hidden {
+  display: none;
 }
 
 .ghost {
@@ -956,6 +1074,12 @@ input[type='range']:focus-visible {
     right: 14px;
     width: auto;
     bottom: 46px;
+  }
+  /* 字幕浮层：小屏仍居中可见（硬要求），略收字号/位置避免与信息卡贴死 */
+  #demo-caption {
+    font-size: 15px;
+    bottom: 40px;
+    max-width: calc(100vw - 24px);
   }
   #hint {
     display: none;

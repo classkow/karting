@@ -1,9 +1,13 @@
 import { SYSTEMS, systemMeta } from '../kart/registry.js';
 import { VIEWS } from '../interaction/views.js';
 import { CLUTCH_ENGAGE_RPM } from '../sim/state.js';
+import { DEMO_SCRIPTS } from './demoScripts.js';
 import { icon } from './icons.js';
 
-// ————— UI 面板：部件清单 / 控制台（转速表）/ 信息卡 / 工具提示 / 帮助 —————
+// ————— UI 面板：部件清单 / 控制台（转速表）/ 信息卡 / 工具提示 / 帮助 / 演示 —————
+
+// 暂停图标（icons.js 无 pause，此处就地内联，不动图标库）
+const PAUSE_ICON = '<svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
 
 function sliderFill(input) {
   const min = +input.min || 0;
@@ -178,6 +182,9 @@ export function initControlPanel(container, api) {
         <label>转向 <span class="rv" id="v-steer">0°</span></label>
         <input id="rg-steer" type="range" min="-100" max="100" value="0"/>
       </div>
+      <div class="row steer-readout dim" id="steer-readout">
+        <label>内外轮转角<span class="rv" id="v-steer-ack">—</span></label>
+      </div>
     </div>
 
     <div class="panel-head">${icon('layers', 15)}视图与机构</div>
@@ -205,6 +212,17 @@ export function initControlPanel(container, api) {
       </div>
       <button id="btn-reset" class="ghost wide">${icon('home', 13)}视角复位</button>
     </div>
+
+    <div class="panel-head">${icon('spark', 15)}演示</div>
+    <div class="ctl-block demo-block">
+      <div class="demo-chips" id="demo-chips">
+        ${DEMO_SCRIPTS.map((s) =>
+          `<button data-demo="${s.id}" class="dchip"><b>${s.label}</b><i>${s.duration}s</i></button>`
+        ).join('')}
+      </div>
+      <button id="btn-demo" class="tg demo-play" disabled>${icon('play', 13)}<span>播放</span></button>
+      <div class="demo-progress"><i id="demo-progress-fill"></i></div>
+    </div>
   `;
 
   const $ = (s) => container.querySelector(s);
@@ -219,13 +237,17 @@ export function initControlPanel(container, api) {
   const tgJacking = $('#tg-jacking');
   const tgJscale = $('#tg-jscale');
   const vJacking = $('#v-jacking');
+  const vSteer = $('#v-steer');
+  const steerAck = $('#v-steer-ack');
+  const steerRow = $('#steer-readout');
+  const btnDemo = $('#btn-demo');
+  const demoProgressFill = $('#demo-progress-fill');
 
   bindRange($('#rg-throttle'), (v) => api.onThrottle(v / 100));
   bindRange($('#rg-brake'), (v) => api.onBrake(v / 100));
-  bindRange($('#rg-steer'), (v) => {
-    api.onSteer(v / 100);
-    $('#v-steer').textContent = Math.round(v * 0.29) + '°';
-  });
+  // 转向滑条只管输入：#v-steer 与内外轮读数由 app 每帧从解算角节流推送（setSteerAngles），
+  // 不在此写任何角度——滑条值与真实转角无固定比例（阿克曼），系数魔数一律禁止。
+  bindRange($('#rg-steer'), (v) => api.onSteer(v / 100));
   bindRange($('#rg-explode'), (v) => {
     api.onExplode(v / 100);
     $('#v-explode').textContent = v + '%';
@@ -243,6 +265,12 @@ export function initControlPanel(container, api) {
   tgJacking.addEventListener('click', () => api.onJacking());
   tgJscale.addEventListener('click', () => api.onJackingScale());
   $('#btn-reset').addEventListener('click', () => api.onReset());
+  // 演示区：chip = 装载并立即播放；按钮 = 播放/暂停切换。回调可缺省（api 后置装配）
+  $('#demo-chips').addEventListener('click', (e) => {
+    const btn = e.target.closest('.dchip');
+    if (btn) api.onDemoChip?.(btn.dataset.demo);
+  });
+  btnDemo.addEventListener('click', () => api.onDemoToggle?.());
   $('#view-chips').addEventListener('click', (e) => {
     const btn = e.target.closest('.vchip');
     if (!btn) return;
@@ -263,7 +291,7 @@ export function initControlPanel(container, api) {
     const input = $('#rg-steer');
     input.value = Math.round(v * 100);
     sliderFill(input);
-    $('#v-steer').textContent = Math.round(v * 29) + '°';
+    // 不写 #v-steer：角度读数统一由 setSteerAngles（解算值）负责，避免口径打架
   }
 
   return {
@@ -282,6 +310,20 @@ export function initControlPanel(container, api) {
       $('#v-throttle').textContent = Math.round(v * 100) + '%';
     },
     setSteerUI,
+    // 内外轮转角读数：app 每帧从 sim.steerAngleL/R 解算值节流推送（度，取绝对值，内轮=|角度|大者）；
+    // 无参调用 = 回中——#v-steer 归 0°、整行灰显"—"。任何角度字样都来自解算值，无系数。
+    setSteerAngles(inner, outer, diff) {
+      if (inner == null) {
+        vSteer.textContent = '0°';
+        steerAck.textContent = '—';
+        steerRow.classList.add('dim');
+        return;
+      }
+      const d = (x) => x.toFixed(1);
+      vSteer.textContent = d(inner) + '°';
+      steerAck.textContent = `内轮 ${d(inner)}° · 外轮 ${d(outer)}° · 差 ${d(diff)}°`;
+      steerRow.classList.remove('dim');
+    },
     setBrakeUI(v) {
       const input = $('#rg-brake');
       input.value = Math.round(v * 100);
@@ -312,6 +354,15 @@ export function initControlPanel(container, api) {
     },
     setJackingLift(mm) {
       vJacking.textContent = `${mm.toFixed(1)} mm（真实解算值）`;
+    },
+    // 演示播放器状态同步：chip 高亮当前脚本、播放按钮三态（播放/暂停/继续）、进度条
+    setDemoUI({ scriptId = null, playing = false, armed = false }) {
+      container.querySelectorAll('.dchip').forEach((b) => b.classList.toggle('active', b.dataset.demo === scriptId));
+      btnDemo.disabled = !scriptId;
+      btnDemo.innerHTML = `${playing ? PAUSE_ICON : icon('play', 13)}<span>${playing ? '暂停' : armed ? '继续' : '播放'}</span>`;
+    },
+    setDemoProgress(p) {
+      demoProgressFill.style.width = (Math.min(Math.max(p, 0), 1) * 100).toFixed(1) + '%';
     },
   };
 }
@@ -379,7 +430,7 @@ export function initHelp(overlay) {
     ['B', '刹车（按住）'],
     ['E', '爆炸分解 开/合'],
     ['R', '视角复位'],
-    ['1 – 8', '切换视角预设'],
+    ['1 – 9', '切换视角预设'],
     ['Esc', '关闭信息卡 / 弹窗'],
   ];
   const TOUCHES = [
@@ -410,6 +461,41 @@ export function initHelp(overlay) {
     if (e.target === overlay || e.target.closest('#help-close')) show(false);
   });
   return { toggle: () => show(overlay.classList.contains('hidden')), show };
+}
+
+// ————— 演示字幕浮层 —————
+// 画布底部居中的独立浮层：不挂在左右面板里，小屏（≤880px）面板折叠时字幕仍可见（硬要求）。
+// set = 常驻字幕；note = 临时提示（如"演示已暂停"），到时自动消失，被 set 打断则以 set 为准。
+export function initDemoCaption() {
+  const el = document.createElement('div');
+  el.id = 'demo-caption';
+  el.className = 'hidden';
+  document.getElementById('app').appendChild(el);
+  let token = 0;
+  return {
+    set(text) {
+      token += 1;
+      if (!text) {
+        el.textContent = '';
+        el.classList.add('hidden');
+        return;
+      }
+      el.textContent = text;
+      el.classList.remove('hidden');
+    },
+    note(text, ms) {
+      const my = token + 1;
+      token = my;
+      el.textContent = text;
+      el.classList.remove('hidden');
+      setTimeout(() => {
+        if (token === my) {
+          el.textContent = '';
+          el.classList.add('hidden');
+        }
+      }, ms);
+    },
+  };
 }
 
 // ————— 小屏面板折叠（≤880px 时点头栏收起/展开，把视野让给模型）—————

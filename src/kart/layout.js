@@ -33,4 +33,31 @@ export const L = {
   seatZ: -0.26,
   rackY: 0.125,
   rackZ: 0.34,
+
+  // 转向器几何（齿轮齿条 → 转向臂 → 拉杆），可行域注释见文末 tieRodLen 处
+  steering: {
+    arm: 0.22,         // 转向臂长（指向车尾）
+    armY: 0.002,       // 转向臂高（近轴高度）
+    armIn: 0.182,      // 转向臂内倾量（梯形布置 → 阿克曼几何）
+    rackHalf: 0.30,    // 齿条端球铰横向距离
+    rackTravel: 0.062, // 齿条全行程（单侧）
+    pinionR: 0.021,    // 小齿轮节圆半径
+  },
 };
+
+// 转向三值可行域被两侧夹死，收紧任一侧即无解（按 layout 尺寸实测推得）：
+// ① 球铰/臂身/拉杆退出前轮轮胎包络：臂身只能从轮辋桶外缘(ρ=0.0832)与胎圈(ρ=0.091)之间的
+//    开口穿过 → 斜率 arm/armIn ≲ 1.21，且 armY 越大臂身越早贴上轮辋桶（故取近轴高度）；
+// ② 内轮侧拉杆不得进入死点：|主销→臂端| + 拉杆定长 ≥ |主销→齿条端|max(0.394)，即臂端须落在
+//    以主销与齿条端为焦点的椭圆之外 → 斜率 ≲1.21 时臂端总长须 ≥ 0.28m。
+// 两式的交角即上述取值（改前 arm=0.13/armIn=0.034 的臂身斜率 3.8，只能穿胎而过）。
+
+// 拉杆定长（直行位）：齿条端球铰到转向臂端球铰的装配距离。
+// steering.js 装配与转向单测都从本函数取值——改上面任何几何，拉杆长自动跟随，杜绝手抄漂移。
+export function tieRodLen(sign) {
+  const armEndX = sign * (L.kingpinX - L.steering.armIn);
+  const armEndY = L.kingpinY + L.steering.armY;
+  const armEndZ = L.frontAxleZ - L.steering.arm;
+  const rackEndX = sign * L.steering.rackHalf;
+  return Math.hypot(armEndX - rackEndX, armEndY - L.rackY, armEndZ - L.rackZ);
+}

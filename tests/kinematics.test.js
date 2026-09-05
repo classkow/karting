@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pistonStroke, chainPath, solveSteeringAngle } from '../src/sim/kinematics.js';
-import { L } from '../src/kart/layout.js';
+import { L, tieRodLen } from '../src/kart/layout.js';
 
 const R = L.crankR;    // 曲柄半径（同源 layout.js）
 const LROD = L.rodLen; // 连杆长度（同源 layout.js）
@@ -107,9 +107,26 @@ test('链条包络：直线段上相邻采样点间距 ≈ 步长（弧长参数
 });
 
 test('转向刚杆约束：解满足定长条件（全行程扫描）', () => {
-  const geom = { vx: 0.034, vz: -0.13, armY: -0.003, rodLen: 0.286, pivot: { x: -0.585, y: 0.135, z: 0.52 } };
+  // 常量契约（先例：链条测试守链轮半径契约）：纯派生断言"自身自洽"对几何漂移免疫，
+  // 契约把现役转向几何钉住——layout 调参必须先变红、确认可行域后再有意识地更新契约值。
+  assert.equal(L.steering.arm, 0.22, '转向臂长契约');
+  assert.equal(L.steering.armIn, 0.182, '转向臂内倾契约');
+  assert.equal(L.steering.armY, 0.002, '转向臂高契约');
+  assert.equal(L.steering.rackHalf, 0.3, '齿条端半距契约');
+  assert.equal(L.steering.rackTravel, 0.062, '齿条行程契约');
+  assert.equal(L.steering.pinionR, 0.021, '小齿轮节圆半径契约');
+  // 几何全部派生自 layout + tieRodLen（与 steering.js 同一来源，改 layout 自动跟随）。
+  // 此处以左侧（sign=-1）为样本扫描全行程；vx/vz/armY/rackEnd 符号约定同 steering.js update。
+  const sign = -1;
+  const geom = {
+    vx: -sign * L.steering.armIn,
+    vz: -L.steering.arm,
+    armY: L.steering.armY,
+    rodLen: tieRodLen(sign),
+    pivot: { x: sign * L.kingpinX, y: L.kingpinY, z: L.frontAxleZ },
+  };
   for (let t = -1; t <= 1.001; t += 0.05) {
-    const rackEnd = { x: -0.3 + t * 0.062, y: 0.125, z: 0.34 };
+    const rackEnd = { x: sign * L.steering.rackHalf + t * L.steering.rackTravel, y: L.rackY, z: L.rackZ };
     const a = solveSteeringAngle({ ...geom, rackEnd });
     const ex = geom.pivot.x + geom.vx * Math.cos(a) + geom.vz * Math.sin(a);
     const ez = geom.pivot.z - geom.vx * Math.sin(a) + geom.vz * Math.cos(a);
@@ -121,8 +138,32 @@ test('转向刚杆约束：解满足定长条件（全行程扫描）', () => {
   }
 });
 
+test('转向几何同源：直行位拉杆恰好闭合于 a=0（tieRodLen 与转向器一致）', () => {
+  // tieRodLen 的臂端中性位定义（a=0）与齿条直行位必须自洽——否则直行位车轮初始即歪
+  for (const sign of [-1, 1]) {
+    const a = solveSteeringAngle({
+      vx: -sign * L.steering.armIn,
+      vz: -L.steering.arm,
+      armY: L.steering.armY,
+      rodLen: tieRodLen(sign),
+      pivot: { x: sign * L.kingpinX, y: L.kingpinY, z: L.frontAxleZ },
+      rackEnd: { x: sign * L.steering.rackHalf, y: L.rackY, z: L.rackZ },
+      a0: 0,
+    });
+    assert.ok(Math.abs(a) < 1e-9, `sign=${sign} 直行位解 a=${a}，应恰为 0`);
+  }
+});
+
 test('转向解暖启动：与冷启动同解（数值稳定）', () => {
-  const base = { vx: -0.034, vz: -0.13, armY: -0.003, rodLen: 0.286, pivot: { x: 0.585, y: 0.135, z: 0.52 }, rackEnd: { x: 0.362, y: 0.125, z: 0.34 } };
+  const sign = 1; // 右侧（rackEnd 在满行程外端）
+  const base = {
+    vx: -sign * L.steering.armIn,
+    vz: -L.steering.arm,
+    armY: L.steering.armY,
+    rodLen: tieRodLen(sign),
+    pivot: { x: sign * L.kingpinX, y: L.kingpinY, z: L.frontAxleZ },
+    rackEnd: { x: sign * L.steering.rackHalf + L.steering.rackTravel, y: L.rackY, z: L.rackZ },
+  };
   const cold = solveSteeringAngle({ ...base, a0: 0 });
   const warm = solveSteeringAngle({ ...base, a0: cold * 0.8 });
   assert.ok(Math.abs(cold - warm) < 1e-9);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { M } from '../materials.js';
 import { mesh, cylBetween, sprocketGeometry } from '../geometry.js';
-import { L } from '../layout.js';
+import { L, tieRodLen } from '../layout.js';
 import { solveSteeringAngle } from '../../sim/kinematics.js';
 import { buildWheel } from './wheels.js';
 
@@ -15,20 +15,16 @@ const KP_X = L.kingpinX;
 const KP_Z = L.frontAxleZ;
 const KPI = L.kingpinKPI;         // 主销内倾（正视上端向内）
 const CASTER = L.kingpinCaster;   // 主销后倾（侧视上端向后）
-const ARM = 0.22;                 // 转向臂长（指向车尾）
-const ARM_Y = 0.002;
-const ARM_IN = 0.182;             // 转向臂内倾量（梯形布置 → 阿克曼几何）
-// 三值可行域被两侧夹死，收紧任一侧即无解（按 layout 尺寸实测推得）：
-// ① 球铰/臂身/拉杆退出前轮轮胎包络：臂身只能从轮辋桶外缘(ρ=0.0832)与胎圈(ρ=0.091)之间的
-//    开口穿过 → 斜率 ARM/ARM_IN ≲ 1.21，且 ARM_Y 越大臂身越早贴上轮辋桶（故取近轴高度）；
-// ② 内轮侧拉杆不得进入死点：|主销→臂端| + 拉杆定长 ≥ |主销→齿条端|max(0.394)，即臂端须落在
-//    以主销与齿条端为焦点的椭圆之外 → 斜率 ≲1.21 时臂端总长须 ≥ 0.28m。
-// 两式的交角即此处取值（改前 ARM=0.13/ARM_IN=0.034 的臂身斜率 3.8，只能穿胎而过）。
+// 转向器几何常量同源 layout.js（L.steering + tieRodLen，可行域注释在那里）——
+// 此处不留几何字面量，调参只改 layout，装配与单测自动跟随。
+const ARM = L.steering.arm;               // 转向臂长（指向车尾）
+const ARM_Y = L.steering.armY;
+const ARM_IN = L.steering.armIn;          // 转向臂内倾量（梯形布置 → 阿克曼几何）
 const RACK_Y = L.rackY;
 const RACK_Z = L.rackZ;
-const RACK_HALF = 0.30;           // 齿条端球铰横向距离
-const RACK_TRAVEL = 0.062;        // 齿条全行程（单侧）
-const PINION_R = 0.021;           // 小齿轮节圆半径
+const RACK_HALF = L.steering.rackHalf;    // 齿条端球铰横向距离
+const RACK_TRAVEL = L.steering.rackTravel; // 齿条全行程（单侧）
+const PINION_R = L.steering.pinionR;      // 小齿轮节圆半径
 
 const refs = {};
 const _armEnd = new THREE.Vector3();
@@ -188,10 +184,9 @@ export function buildSteering(root, reg) {
   refs.tieL = mkTieRod();
   refs.tieR = mkTieRod();
 
-  // 齿条端球铰初始位置 → 计算左右拉杆定长
-  const armEndNeutral = (sign) => new THREE.Vector3(sign * (KP_X - ARM_IN), KP_Y + ARM_Y, KP_Z - ARM);
-  refs.rodLenL = new THREE.Vector3(-RACK_HALF, RACK_Y, RACK_Z).distanceTo(armEndNeutral(-1));
-  refs.rodLenR = new THREE.Vector3(RACK_HALF, RACK_Y, RACK_Z).distanceTo(armEndNeutral(1));
+  // 拉杆定长同源 layout.tieRodLen（直行位齿条端球铰到臂端球铰的装配距离），与单测共用
+  refs.rodLenL = tieRodLen(-1);
+  refs.rodLenR = tieRodLen(1);
   refs.angleL = 0;
   refs.angleR = 0;
 

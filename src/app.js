@@ -10,7 +10,8 @@ import { initExplode } from './interaction/explode.js';
 import { initPicking } from './interaction/picking.js';
 import { initCameraRig } from './interaction/cameraRig.js';
 import { initShortcuts } from './interaction/shortcuts.js';
-import { initPartsPanel, initControlPanel, initInfoCard, initTooltip, initHelp, initPanelCollapse } from './ui/panels.js';
+import { initPartsPanel, initControlPanel, initInfoCard, initTooltip, initHelp, initPanelCollapse, initDemoCaption } from './ui/panels.js';
+import { createDemoPlayer } from './ui/demoPlayer.js';
 
 // ————— 应用装配与主循环 —————
 // 依赖方向：app → { core, kart, sim, interaction, ui }；kart/sim 不依赖 interaction/ui。
@@ -49,8 +50,9 @@ export function createApp() {
   scene.add(kart);
 
   const explode = initExplode(registry);
-  // ctrl 稍后创建（初始化顺序），用前置声明打破引用环
+  // ctrl / demoPlayer 稍后创建（初始化顺序），用前置声明打破引用环
   let ctrl = null;
+  let demoPlayer = null;
   const rig = initCameraRig(camera, controls, {
     onStopAutoRotate: () => ctrl?.setRotateUI(false),
     instantFly: reduceMotion,
@@ -103,17 +105,22 @@ export function createApp() {
   const chipFps = document.getElementById('chip-fps');
 
   ctrl = initControlPanel(document.getElementById('control-panel'), {
+    // 滑条是用户输入通道：拖动任一滑条 = 演示播放中的手动介入 → 暂停
     onThrottle(v) {
+      demoPlayer?.interfere();
       sim.throttle = v;
       ctrl.setThrottleUI(v);
     },
     onSteer(v) {
+      demoPlayer?.interfere();
       sim.steer = v;
     },
     onBrake(v) {
+      demoPlayer?.interfere();
       sim.brakeTarget = v;
     },
     onExplode(v) {
+      demoPlayer?.interfere();
       explode.setTarget(v);
     },
     onEngine() {
@@ -150,6 +157,12 @@ export function createApp() {
       sim.jackingScale = seq[(seq.indexOf(sim.jackingScale) + 1) % seq.length];
       ctrl.setJackingUI(sim.jackingDemo === 1, sim.jackingScale);
     },
+    onDemoChip(id) {
+      demoPlayer?.loadAndPlay(id); // 点 chip = 装载并立即开播（会自己讲的展台）
+    },
+    onDemoToggle() {
+      demoPlayer?.toggle();
+    },
     getRpm: () => sim.rpm,
   });
   usePostfx = prefs.quality && !!fx;
@@ -160,6 +173,16 @@ export function createApp() {
   const help = initHelp(document.getElementById('help-overlay'));
   document.getElementById('btn-help').addEventListener('click', () => help.toggle());
   initPanelCollapse();
+
+  // ————— 演示播放器（字幕浮层独立于面板，小屏折叠时仍可见）—————
+  demoPlayer = createDemoPlayer({
+    sim,
+    rig,
+    explode,
+    ctrl,
+    infoCard,
+    caption: initDemoCaption(),
+  });
 
   // ————— 拾取 —————
   const lastPointer = [0, 0];
@@ -188,8 +211,9 @@ export function createApp() {
     },
   });
 
-  // 用户拖拽时停止自动环绕
+  // 用户拖拽时停止自动环绕；演示播放中拖画布 = 手动介入 → 暂停
   canvas.addEventListener('pointerdown', () => {
+    demoPlayer?.interfere();
     if (controls.autoRotate) {
       controls.autoRotate = false;
       ctrl.setRotateUI(false);
@@ -197,6 +221,16 @@ export function createApp() {
   });
 
   const driveKeys = initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking });
+
+  // 演示播放中按任意驾驶键 = 手动介入 → 暂停（旁观监听，不改动 shortcuts.js 的输入处理）
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    const k = e.key.toLowerCase();
+    if (k === ' ' || k === 'w' || k === 'a' || k === 's' || k === 'd' || k === 'b'
+      || k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright') {
+      demoPlayer?.interfere();
+    }
+  });
 
   // ————— FPS 统计与持续低帧率自动降级 —————
   const fpsGuard = createFpsGuard({
@@ -215,9 +249,12 @@ export function createApp() {
   let wasRunning = false;
   let lastEngineState = -1;
   let lastJackReadout = 0; // 举升读数节流（100ms）
+  let lastSteerReadout = 0; // 内外轮转角读数节流（100ms）
+  let steerWasCentered = true; // 上一帧是否回中（回中沿立即刷一次"—"，避免残留旧角度）
 
   function frame(dt, rawDt = dt, render = true) {
     driveKeys.update(dt); // 长按 W/S/A/D 的持续输入
+    demoPlayer.update(dt); // 演示时间轴先推进：动作写入 sim 后同帧参与解算
     sim.step(dt);
     registry.runUpdates(dt, sim); // 各部件先写机构位姿（动态件写 mechPos）
     explode.update(dt);           // 再由爆炸模块统一落 position —— 动态件零帧滞后
@@ -230,6 +267,23 @@ export function createApp() {
     if (sim.jackingDemo && sim.time - lastJackReadout > 0.1) {
       lastJackReadout = sim.time;
       ctrl.setJackingLift(sim.jackingLiftMM);
+    }
+
+    // 内外轮转角读数（阿克曼）：直读左右前轮解算角，100ms 节流刷 DOM；
+    // |steerSmooth|<0.01 判回中。内轮=|角度|大者，差 = 内 − 外（恒 ≥0）。
+    const steerCentered = Math.abs(sim.steerSmooth) < 0.01;
+    if (steerCentered !== steerWasCentered || (!steerCentered && sim.time - lastSteerReadout > 0.1)) {
+      steerWasCentered = steerCentered;
+      lastSteerReadout = sim.time;
+      if (steerCentered) {
+        ctrl.setSteerAngles();
+      } else {
+        const aL = (sim.steerAngleL * 180) / Math.PI;
+        const aR = (sim.steerAngleR * 180) / Math.PI;
+        const inner = Math.max(Math.abs(aL), Math.abs(aR));
+        const outer = Math.min(Math.abs(aL), Math.abs(aR));
+        ctrl.setSteerAngles(inner, outer, inner - outer);
+      }
     }
 
     const engineActive = sim.engineOn || sim.cranking > 0;
@@ -336,6 +390,7 @@ export function createApp() {
     camera,
     controls,
     explode,
+    demoPlayer,
     step: (dt = 1 / 60, n = 1, render = false) => {
       for (let i = 0; i < n; i++) frame(dt, dt, render);
     },

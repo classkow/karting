@@ -2,8 +2,8 @@
 // 运行：npm test（node --test）。几何常量全部同源 layout.js（调参必须变红，杜绝静默全绿）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { kingpinAxis, kingpinDrop, solveChassisPose } from '../src/sim/kinematics.js';
-import { L } from '../src/kart/layout.js';
+import { kingpinAxis, kingpinDrop, solveChassisPose, solveSteeringAngle } from '../src/sim/kinematics.js';
+import { L, tieRodLen } from '../src/kart/layout.js';
 
 const GEOM = {
   trackF: 2 * L.kingpinX,
@@ -12,9 +12,23 @@ const GEOM = {
   kpiGeom: { kpi: L.kingpinKPI, caster: L.kingpinCaster, scrub: L.kingpinScrub, trail: L.kingpinTrail },
 };
 
-// 满舵实测角（smoke 实测 steer=1 左转：左轮打满钳制位 0.62，右轮阿克曼略小）
-const FULL_L = -0.62;
-const FULL_R = -0.4655;
+// 满舵角派生（不再手抄实测数字）：符号约定同 steering.js 现行 update——
+// disp = steerSmooth·rackTravel，rackEnd.x = sign·rackHalf + disp；steer=+1 为左转，
+// 内侧=左轮（负角、打满），外侧=右轮（负角、阿克曼略小）。几何再调时测试自动跟随。
+function fullSteerAngle(sign) {
+  const arg = {
+    vx: -sign * L.steering.armIn,
+    vz: -L.steering.arm,
+    armY: L.steering.armY,
+    rodLen: tieRodLen(sign),
+    pivot: { x: sign * L.kingpinX, y: L.kingpinY, z: L.frontAxleZ },
+    rackEnd: { x: sign * L.steering.rackHalf + L.steering.rackTravel, y: L.rackY, z: L.rackZ },
+  };
+  const cold = solveSteeringAngle({ ...arg, a0: 0 });
+  return solveSteeringAngle({ ...arg, a0: cold }); // 暖启动复核，防冷启动未收敛
+}
+const FULL_L = fullSteerAngle(-1);
+const FULL_R = fullSteerAngle(1);
 
 test('举升常量契约与主销轴向：单位向量、上端向内且向后', () => {
   // 常量契约（先例：链条测试守链轮半径契约）

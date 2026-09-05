@@ -42,7 +42,7 @@ export function initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking
       infoCard.show(null);
       picking.select(null);
       help.show(false);
-    } else if (/^[1-8]$/.test(k)) {
+    } else if (/^[1-9]$/.test(k)) {
       rig.applyView(viewKeys[+k - 1]);
     } else {
       handled = false;
