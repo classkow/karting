@@ -1,6 +1,7 @@
 import { SYSTEMS, systemMeta } from '../kart/registry.js';
 import { VIEWS } from '../interaction/views.js';
 import { CLUTCH_ENGAGE_RPM } from '../sim/state.js';
+import * as cycle from '../sim/cycle.js';
 import { DEMO_SCRIPTS } from './demoScripts.js';
 import { icon } from './icons.js';
 
@@ -153,6 +154,71 @@ function tachSVG() {
   `;
 }
 
+// ————— 换气正时圆盘（SVG，§7.2）—————
+// 0°ATDC 在正上、顺时针。彩色弧由 sim/cycle.js 派生：排气开启（暖）、扫气开启（冷）、
+// blowdown（亮）、点火角刻度；指针每帧一次 setAttribute（与转速表同成本）。
+function cycleDiscSVG() {
+  const cx = 70, cy = 70, R1 = 60, R2 = 44;
+  const pt = (deg, r) => {
+    const rad = (deg * Math.PI) / 180;
+    return [cx + r * Math.sin(rad), cy - r * Math.cos(rad)];
+  };
+  const arc = (a0, a1, r) => {
+    const [x0, y0] = pt(a0, r);
+    const [x1, y1] = pt(a1, r);
+    const large = a1 - a0 > 180 ? 1 : 0;
+    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  };
+  const deg = (r) => (r * 180) / Math.PI;
+  const evo = deg(cycle.EVO), evc = deg(cycle.EVC);
+  const ivo = deg(cycle.IVO), ivc = deg(cycle.IVC);
+  const ign = 360 - 20; // 点火 20°BTDC
+  let ticks = '';
+  for (const d of [0, 90, 180, 270]) {
+    const [x0, y0] = pt(d, R1 + 3);
+    const [x1, y1] = pt(d, R1 - 4);
+    ticks += `<line x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke="#566478" stroke-width="1.6"/>`;
+  }
+  const [tx, ty] = pt(ign, R1 + 10);
+  return `
+    <svg id="cycle-disc" viewBox="0 0 140 140">
+      <circle cx="${cx}" cy="${cy}" r="${R1 + 1}" fill="#141a24" stroke="#2a3442"/>
+      <path d="${arc(evo, evc, R1)}" stroke="#ff8a4a" stroke-width="7" fill="none" opacity="0.9"/>
+      <path d="${arc(ivo, ivc, R2)}" stroke="#6fc3ff" stroke-width="7" fill="none" opacity="0.9"/>
+      <path d="${arc(evo, ivo, (R1 + R2) / 2)}" stroke="#ffd54a" stroke-width="4" fill="none"/>
+      <path d="${arc(360 - 20, 360, (R1 + R2) / 2)}" stroke="#ff5d5d" stroke-width="4" fill="none"/>
+      ${ticks}
+      <text x="${tx.toFixed(1)}" y="${(ty + 3).toFixed(1)}" fill="#ff5d5d" font-size="8" text-anchor="middle">IGN</text>
+      <text x="${cx}" y="${cy - R2 + 16}" fill="#5c6b7d" font-size="8" text-anchor="middle">0°</text>
+      <text x="${cx + R2 - 6}" y="${cy + 3}" fill="#5c6b7d" font-size="8" text-anchor="middle">90</text>
+      <text x="${cx}" y="${cy + R2 - 2}" fill="#5c6b7d" font-size="8" text-anchor="middle">180 BDC</text>
+      <text x="${cx - R2 + 6}" y="${cy + 3}" fill="#5c6b7d" font-size="8" text-anchor="middle">270</text>
+      <g id="cycle-needle" transform="rotate(0 ${cx} ${cy})">
+        <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - R1 + 6}" stroke="#f2f6fa" stroke-width="1.8"/>
+      </g>
+      <circle cx="${cx}" cy="${cy}" r="3.2" fill="#171d26" stroke="#3d4b5f" stroke-width="1.2"/>
+      <text x="${cx}" y="${cy + 30}" fill="#5c6b7d" font-size="7.5" text-anchor="middle">排气/扫气/blowdown</text>
+    </svg>
+  `;
+}
+
+// ————— P-V 示功环（SVG，§7.2）—————
+// 整条环由 sim/cycle.solveCycle 确定性算出后画静态 path（分桶缓存）；
+// 活动点 = 逐帧模型状态直读。标注"稳态解/实时"：爬升工况下实时点会略偏离稳态环，
+// 这是诚实口径（§7.2），不掩盖。
+function pvSVG() {
+  return `
+    <svg id="pv-loop" viewBox="0 0 200 128">
+      <rect x="30" y="6" width="164" height="104" fill="#10151d" stroke="#2a3442"/>
+      <path id="pv-path" d="" fill="rgba(255,181,71,0.10)" stroke="#ffb547" stroke-width="1.6"/>
+      <circle id="pv-dot" r="3" fill="#6fc3ff" stroke="#0d1117" stroke-width="0.8"/>
+      <text x="110" y="122" fill="#5c6b7d" font-size="8.5" text-anchor="middle">气缸容积 cc →</text>
+      <text x="14" y="60" fill="#5c6b7d" font-size="8.5" transform="rotate(-90 14 60)" text-anchor="middle">缸压 bar →</text>
+      <text id="pv-note" x="188" y="16" fill="#5c6b7d" font-size="7.5" text-anchor="end">稳态环</text>
+    </svg>
+  `;
+}
+
 // ————— 控制台 —————
 export function initControlPanel(container, api) {
   container.innerHTML = `
@@ -184,6 +250,21 @@ export function initControlPanel(container, api) {
       </div>
       <div class="row steer-readout dim" id="steer-readout">
         <label>内外轮转角<span class="rv" id="v-steer-ack">—</span></label>
+      </div>
+    </div>
+
+    <div class="panel-head">${icon('cycle', 15)}换气循环</div>
+    <div class="ctl-block" id="cycle-block">
+      <div class="drive-stats">
+        <div class="stat"><span class="stat-v" id="st-cyl-p">—</span><span class="stat-l">缸压 bar</span></div>
+        <div class="stat"><span class="stat-v" id="st-cc-p">—</span><span class="stat-l">曲轴箱 bar</span></div>
+        <div class="stat"><span class="stat-v" id="st-reed">—</span><span class="stat-l">簧片开度</span></div>
+        <div class="stat"><span class="stat-v stat-t" id="st-wave">—</span><span class="stat-l">压力波</span></div>
+      </div>
+      <div class="pv-wrap">${pvSVG()}</div>
+      <div class="disc-wrap">${cycleDiscSVG()}</div>
+      <div class="toggle-row">
+        <button id="tg-slowmo" class="tg" title="换气慢放（时间轴整体放慢，相对时序为真值）"><span>换气慢放</span></button>
       </div>
     </div>
 
@@ -242,6 +323,10 @@ export function initControlPanel(container, api) {
   const steerRow = $('#steer-readout');
   const btnDemo = $('#btn-demo');
   const demoProgressFill = $('#demo-progress-fill');
+  const needleCycle = $('#cycle-needle');
+  const tgSlowmo = $('#tg-slowmo');
+  let pvScale = null;
+  tgSlowmo.addEventListener('click', () => api.onCycleSlow?.());
 
   bindRange($('#rg-throttle'), (v) => api.onThrottle(v / 100));
   bindRange($('#rg-brake'), (v) => api.onBrake(v / 100));
@@ -355,6 +440,39 @@ export function initControlPanel(container, api) {
     setJackingLift(mm) {
       vJacking.textContent = `${mm.toFixed(1)} mm（真实解算值）`;
     },
+    // 换气循环读数：app 100ms 节流推送（sim.cycle.readouts() 直读解算值，无系数）
+    setCycleReadouts({ pCylBar, pCcBar, reedLift, waveState }) {
+      $('#st-cyl-p').textContent = pCylBar.toFixed(2);
+      $('#st-cc-p').textContent = pCcBar.toFixed(2);
+      $('#st-reed').textContent = Math.round(reedLift * 100) + '%';
+      $('#st-wave').textContent = waveState;
+    },
+    // 正时圆盘指针：每帧一次 setAttribute（与转速表同成本，§7.3）
+    setCycleNeedle(deg) {
+      needleCycle.setAttribute('transform', `rotate(${deg.toFixed(1)} 70 70)`);
+    },
+    // P-V 稳态环：app 按 250rpm×5% 油门分桶 + 250ms 节流推送；标度存闭包供活动点复用
+    setPVLoop(points, pMax) {
+      pvScale = {
+        v0: ((cycle.V_C + cycle.V_DISP) * 1e6) * 1.03,
+        p1: Math.max(pMax * 1.12, 10),
+      };
+      const X = (v) => 32 + (v / pvScale.v0) * 160;
+      const Y = (p) => 108 - (Math.min(p, pvScale.p1) / pvScale.p1) * 100;
+      const d = points.map(([v, p], i) => `${i ? 'L' : 'M'} ${X(v).toFixed(1)} ${Y(p).toFixed(1)}`).join('') + 'Z';
+      $('#pv-path').setAttribute('d', d);
+    },
+    // P-V 活动点：逐帧直读模型状态（实时解；与稳态环的偏差是诚实口径，§7.2）
+    setPVDot(vCc, pBar) {
+      if (!pvScale) return;
+      $('#pv-dot').setAttribute('cx', (32 + (Math.min(vCc, pvScale.v0) / pvScale.v0) * 160).toFixed(1));
+      $('#pv-dot').setAttribute('cy', (108 - (Math.min(pBar, pvScale.p1) / pvScale.p1) * 100).toFixed(1));
+    },
+    // 换气慢放开关：on 时视觉降速 0.004（明示口径：时间轴整体放慢，相对时序为真值 §7.5）
+    setCycleSlowUI(on) {
+      tgSlowmo.classList.toggle('on', on);
+      tgSlowmo.innerHTML = `<span>换气慢放${on ? '<i class="tg-mini">相对时序为真值</i>' : ''}</span>`;
+    },
     // 演示播放器状态同步：chip 高亮当前脚本、播放按钮三态（播放/暂停/继续）、进度条
     setDemoUI({ scriptId = null, playing = false, armed = false }) {
       container.querySelectorAll('.dchip').forEach((b) => b.classList.toggle('active', b.dataset.demo === scriptId));
@@ -430,6 +548,7 @@ export function initHelp(overlay) {
     ['B', '刹车（按住）'],
     ['E', '爆炸分解 开/合'],
     ['R', '视角复位'],
+    ['C', '换气慢放 开/合'],
     ['1 – 9', '切换视角预设'],
     ['Esc', '关闭信息卡 / 弹窗'],
   ];

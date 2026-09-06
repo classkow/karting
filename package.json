@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/kinematics.test.js tests/state.test.js tests/jacking.test.js tests/demoScripts.test.js",
+    "test": "node --test tests/kinematics.test.js tests/state.test.js tests/jacking.test.js tests/demoScripts.test.js tests/cycle.test.js",
     "smoke": "node scripts/smoke.mjs",
     "open": "start \"\" dist/index.html",
     "lint": "eslint ."

@@ -6,6 +6,7 @@ import { createFpsGuard } from './core/fpsGuard.js';
 import { buildKart } from './kart/builder.js';
 import { createRegistry, systemMeta } from './kart/registry.js';
 import { createSim } from './sim/state.js';
+import { solveCycle as solveCycleModel } from './sim/cycle.js';
 import { initExplode } from './interaction/explode.js';
 import { initPicking } from './interaction/picking.js';
 import { initCameraRig } from './interaction/cameraRig.js';
@@ -157,6 +158,10 @@ export function createApp() {
       sim.jackingScale = seq[(seq.indexOf(sim.jackingScale) + 1) % seq.length];
       ctrl.setJackingUI(sim.jackingDemo === 1, sim.jackingScale);
     },
+    onCycleSlow() {
+      sim.visualSlow = sim.visualSlow === 0.004 ? 0.2 : 0.004;
+      ctrl.setCycleSlowUI(sim.visualSlow === 0.004);
+    },
     onDemoChip(id) {
       demoPlayer?.loadAndPlay(id); // 点 chip = 装载并立即开播（会自己讲的展台）
     },
@@ -250,6 +255,10 @@ export function createApp() {
   let lastEngineState = -1;
   let lastJackReadout = 0; // 举升读数节流（100ms）
   let lastSteerReadout = 0; // 内外轮转角读数节流（100ms）
+  let lastCycleReadout = 0; // 换气循环读数节流（100ms）
+  let lastPvRender = 0; // P-V 稳态环重算节流（250ms，§7.3）
+  let lastPvKey = ''; // P-V 分桶键（250rpm × 5% 油门）
+  const pvCache = new Map();
   let steerWasCentered = true; // 上一帧是否回中（回中沿立即刷一次"—"，避免残留旧角度）
 
   function frame(dt, rawDt = dt, render = true) {
@@ -267,6 +276,32 @@ export function createApp() {
     if (sim.jackingDemo && sim.time - lastJackReadout > 0.1) {
       lastJackReadout = sim.time;
       ctrl.setJackingLift(sim.jackingLiftMM);
+    }
+
+    // 换气循环读数：直读 sim.cycle 解算值，100ms 节流刷 DOM（无系数）
+    if (sim.time - lastCycleReadout > 0.1) {
+      lastCycleReadout = sim.time;
+      ctrl.setCycleReadouts(sim.cycle.readouts());
+    }
+
+    // 正时圆盘指针 + P-V 活动点：每帧一次 setAttribute（直读模型状态）
+    ctrl.setCycleNeedle(sim.cycle.thetaDeg());
+    const [pvV, pvP] = sim.cycle.pvPoint();
+    ctrl.setPVDot(pvV, pvP);
+
+    // P-V 稳态环：分桶缓存（250rpm × 5% 油门）+ 250ms 节流重算（§7.3）
+    {
+      const pvKey = Math.max(400, Math.round(sim.rpm / 250) * 250) + '|' + Math.round(sim.throttle * 20) / 20;
+      if (pvKey !== lastPvKey && sim.time - lastPvRender > 0.25) {
+        lastPvRender = sim.time;
+        lastPvKey = pvKey;
+        if (!pvCache.has(pvKey)) {
+          if (pvCache.size > 40) pvCache.clear(); // 防桶无限增长
+          pvCache.set(pvKey, solveCycleModel(Math.max(400, Math.round(sim.rpm / 250) * 250), Math.round(sim.throttle * 20) / 20));
+        }
+        const solved = pvCache.get(pvKey);
+        ctrl.setPVLoop(solved.loop, solved.peakBar);
+      }
     }
 
     // 内外轮转角读数（阿克曼）：直读左右前轮解算角，100ms 节流刷 DOM；

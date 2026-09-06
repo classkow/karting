@@ -53,6 +53,11 @@ export function createDemoPlayer({ sim, rig, explode, ctrl, infoCard, caption })
       sim.jackingScale = a.scale;
       ctrl.setJackingUI(sim.jackingDemo === 1, sim.jackingScale);
     }
+    if (a.slow !== undefined) {
+      // 换气慢放：时间轴整体放慢（相对时序为真值 §7.5）
+      sim.visualSlow = a.slow ? 0.004 : 0.2;
+      ctrl.setCycleSlowUI(a.slow === 1);
+    }
     setCaption('caption' in a ? a.caption : null);
   }
 
@@ -68,6 +73,10 @@ export function createDemoPlayer({ sim, rig, explode, ctrl, infoCard, caption })
     if (sim.jackingDemo) {
       sim.jackingDemo = 0;
       ctrl.setJackingUI(false, sim.jackingScale);
+    }
+    if (sim.visualSlow !== 0.2) {
+      sim.visualSlow = 0.2; // 换气慢放随脚本复位（slow:0 收尾或 stop 时）
+      ctrl.setCycleSlowUI(false);
     }
     setCaption(null);
   }

@@ -1,16 +1,16 @@
 import { L } from '../kart/layout.js';
+import { createCycleModel } from './cycle.js';
 
 // ————— 仿真状态机 —————
 // 起动流程：起动机拖转(0.9s) → 点火成功 → 怠速，油门响应；
 // 传动比与车轮转速在这里统一结算，各部件更新器只读取。
 
 const IDLE = 1800;
-const MAX_RPM = 13800;
+export const MAX_RPM = 13800;
 // 蹄块式离心离合器接合转速（engine.js 说明文案"约 4000 rpm"以本常量为准）
 export const CLUTCH_ENGAGE_RPM = 4000;
 const RATIO = L.clutchR / L.sprocketR; // 12T / 66T ≈ 0.182
 const WHEEL_R = L.wheelR.r;
-const VISUAL_SLOW = 0.2;   // 视觉降速（机构演示用）
 const VISUAL_CAP = 150;    // 高转速下的视觉角速度上限（避免频闪）
 
 export function createSim() {
@@ -25,6 +25,7 @@ export function createSim() {
     jackingDemo: 0,   // 主销举升演示开关（0=关，1=开）
     jackingScale: 1,  // 教学放大倍率（1/4/8）——只放大显示姿态，UI 毫米读数永远报真实值
     jackingLiftMM: 0, // 内侧后轮离地量真实解算值（mm），jacking 更新器每帧写入
+    visualSlow: 0.2,  // 视觉降速（换气慢放模式 0.004）——时间轴整体放慢，相对时序永远为真值（§7.5）
     brakeTarget: 0,
     brake: 0,
     rpm: 0,
@@ -35,6 +36,7 @@ export function createSim() {
     chainPhase: 0,
     speedKmh: 0,
     time: 0,
+    cycle: createCycleModel(), // 二冲程换气循环（sim/cycle.js，ATDC 角基，随 crankAngle 同基推进）
   };
 
   s.startEngine = () => {
@@ -71,7 +73,7 @@ export function createSim() {
     }
 
     const omegaReal = (s.rpm / 60) * Math.PI * 2;
-    s.omega = Math.min(omegaReal * VISUAL_SLOW, VISUAL_CAP);
+    s.omega = Math.min(omegaReal * s.visualSlow, VISUAL_CAP);
     s.axleOmega = s.omega * RATIO;
     s.wheelOmega = s.axleOmega; // 后轮与后轴同转速
     s.crankAngle = (s.crankAngle + s.omega * dt) % (Math.PI * 2);
@@ -84,6 +86,10 @@ export function createSim() {
 
     s.steerSmooth += (s.steer - s.steerSmooth) * Math.min(1, dt * 7);
     s.brake += (s.brakeTarget - s.brake) * Math.min(1, dt * 10);
+
+    // 二冲程换气循环：dθ 必须取未取模的增量（s.omega·dt），否则跨 2π 边界那一帧换气全丢（§四.6）；
+    // dt 传给簧片阀闭式积分（其固有频率跟视觉时钟，§四.4）
+    s.cycle.step(s.omega * dt, s.rpm, s.throttle, dt);
   };
 
   return s;

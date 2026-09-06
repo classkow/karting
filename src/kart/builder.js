@@ -37,7 +37,8 @@ export function buildKart(reg) {
   buildCockpit(sprung, reg);
 
   root.traverse((o) => {
-    if (o.isMesh) {
+    // userData.noShadow 标记的网格不投影（气体云等体积视觉效果，§七.3）
+    if (o.isMesh && !o.userData.noShadow) {
       o.castShadow = true;
       o.receiveShadow = false;
     }

@@ -45,7 +45,7 @@ test('演示脚本：view 键存在于 VIEWS', () => {
   }
 });
 
-test('演示脚本：数值字段在合法范围（steer/throttle/explode/jacking/scale）', () => {
+test('演示脚本：数值字段在合法范围（steer/throttle/explode/jacking/scale/slow）', () => {
   for (const s of DEMO_SCRIPTS) {
     for (const [i, a] of s.actions.entries()) {
       for (const [k, [lo, hi]] of Object.entries(RANGES)) {
@@ -59,6 +59,9 @@ test('演示脚本：数值字段在合法范围（steer/throttle/explode/jackin
       }
       if ('scale' in a) {
         assert.ok([1, 4, 8].includes(a.scale), `${s.id} actions[${i}] scale 只允许 1/4/8`);
+      }
+      if ('slow' in a) {
+        assert.ok(a.slow === 0 || a.slow === 1, `${s.id} actions[${i}] slow 只允许 0/1`);
       }
     }
   }

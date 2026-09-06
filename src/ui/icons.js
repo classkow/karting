@@ -18,6 +18,7 @@ const ICONS = {
   layers: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
   gauge: '<path d="M5 19a9 9 0 1 1 14 0"/><path d="M12 14l3.5-4.5"/><circle cx="12" cy="14" r="1.4" fill="currentColor" stroke="none"/>',
   cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
+  cycle: '<path d="M20 8a8 8 0 0 0-14.4-1.6"/><path d="M4 16a8 8 0 0 0 14.4 1.6"/><path d="M5.5 3.5v4h4M18.5 20.5v-4h-4"/>',
 };
 
 export function icon(name, size = 15) {

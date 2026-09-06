@@ -1,8 +1,9 @@
 import { VIEWS } from '../interaction/views.js';
 
 // ————— 演示序列脚本（一等数据：时间轴 + 动作 + 字幕定稿）—————
-// 每个动作: { t: 秒, view?, steer?, throttle?, explode?, jacking?, scale?, caption? }
+// 每个动作: { t: 秒, view?, steer?, throttle?, explode?, jacking?, scale?, slow?, caption? }
 // view 值必须是 src/interaction/views.js 的 VIEWS 键名；数值范围同面板滑条。
+// slow = 换气慢放开/关（视觉降速 0.004，相对时序为真值 §7.5）。
 // 字幕文案为定稿（可改标点不改事实与口径）；caption 为 null/缺省 = 清空字幕。
 export const DEMO_SCRIPTS = [
   {
@@ -37,6 +38,17 @@ export const DEMO_SCRIPTS = [
       { t: 24, steer: 0, caption: '这个转角差是机构几何解算出来的，不是摆出来的。' },
     ],
   },
+  {
+    id: 'twostroke', label: '二冲程的一圈呼吸', duration: 32, actions: [
+      { t: 0,  view: 'engine', slow: 1, throttle: 0.85, caption: '二冲程的秘密：曲轴转一圈，就完成一次完整的呼吸。' },
+      { t: 5,  caption: '活塞上行——排气口先关、扫气口随后关死，混合气被压缩。（慢放模式：相对时序为真值）' },
+      { t: 10, caption: '火花塞点火，燃烧把活塞推下去——这就是做功冲程。' },
+      { t: 15, caption: '下行到 85° 时排气口打开：高压废气喷出，压力波冲进膨胀室。' },
+      { t: 20, caption: '曲轴箱被下行活塞压缩、簧片阀关死；扫气口打开，新鲜混合气涌进气缸。' },
+      { t: 26, caption: '压力波在排气管里往返，恰好在排气口关闭前把混合气推回去——调谐。' },
+      { t: 31, slow: 0, caption: null },
+    ],
+  },
 ];
 
 // 结构校验：返回问题列表（空数组 = 合法）。播放器装载时自检剔除坏脚本，单测亦独立断言。
@@ -66,6 +78,7 @@ export function validateDemoScript(script) {
     }
     if ('jacking' in a && a.jacking !== 0 && a.jacking !== 1) push(`actions[${i}] jacking 只允许 0/1: ${a.jacking}`);
     if ('scale' in a && ![1, 4, 8].includes(a.scale)) push(`actions[${i}] scale 只允许 1/4/8: ${a.scale}`);
+    if ('slow' in a && a.slow !== 0 && a.slow !== 1) push(`actions[${i}] slow 只允许 0/1: ${a.slow}`);
     if ('caption' in a && a.caption !== null && typeof a.caption !== 'string') push(`actions[${i}] caption 只允许字符串或 null`);
   }
   const lastT = script.actions[script.actions.length - 1]?.t ?? 0;

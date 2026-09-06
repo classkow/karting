@@ -230,6 +230,30 @@ async function main() {
     await evalJs(rpc, `document.getElementById('tg-jacking').click(); "ok"`);
     await pump(20);
 
+    // 4.65 二冲程换气循环（阶段5 回归，§12.3）：缸压峰值区间、气口正时几何同源、
+    // 波状态读数合法、慢放开关、twostroke 脚本装载（三处白名单同步的验收）。
+    await evalJs(rpc, '__kart.sim.throttle = 1; "ok"');
+    let cycPeak = 0;
+    for (let i = 0; i < 24; i++) {
+      await pump(2);
+      const pNow = await evalJs(rpc, `__kart.sim.cycle.pCyl / 1e5`);
+      cycPeak = Math.max(cycPeak, pNow);
+    }
+    check('换气循环: 缸压峰值在物理区间 (20,120) bar', cycPeak > 20 && cycPeak < 120, `峰值 ${cycPeak.toFixed(1)} bar`);
+    const headerZ = await evalJs(rpc, `__kart.getPart('exhaust').group.children[0].geometry.parameters.path.points[0].z + 0.20`);
+    check('换气循环: header 首点落在排气窗口带内', headerZ > 0.1122 && headerZ < 0.1289, `z=${Number(headerZ).toFixed(4)}`);
+    const waveText = await evalJs(rpc, `__kart.sim.cycle.readouts().waveState`);
+    check('换气循环: 波状态读数合法', ['正压波下行', '负压回抽', '反射回推', '排气口关闭'].includes(waveText), waveText);
+    await evalJs(rpc, `document.getElementById('tg-slowmo').click(); "ok"`);
+    const slowOn = await evalJs(rpc, `__kart.sim.visualSlow`);
+    await evalJs(rpc, `document.getElementById('tg-slowmo').click(); "ok"`);
+    const slowOff = await evalJs(rpc, `__kart.sim.visualSlow`);
+    check('换气慢放: 开关切换 0.004 ↔ 0.2', slowOn === 0.004 && slowOff === 0.2, `${slowOn} → ${slowOff}`);
+    await evalJs(rpc, `__kart.demoPlayer.loadAndPlay('twostroke'); "ok"`);
+    check('演示播放器: twostroke 脚本装载即播放', (await evalJs(rpc, `__kart.demoPlayer.state`)) === 'playing');
+    await evalJs(rpc, `__kart.demoPlayer.stop(); "ok"`);
+    await pump(10);
+
     // 4.6 演示序列播放器：装载 jacking 脚本播放 → 举升段状态 → pointerdown 介入暂停 → stop 复位。
     // （脚本定稿的举升动作在 t=11s，泵帧须越过该点；泵帧一律走 __kart.step，确定性推进）
     await evalJs(rpc, `__kart.demoPlayer.loadAndPlay('jacking'); "ok"`);

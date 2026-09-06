@@ -95,7 +95,7 @@ export function createStage(canvas) {
   platform.receiveShadow = true;
   scene.add(platform);
 
-  // 地台边缘一圈克制的琥珀光圈（经 Bloom 微微发光，收束视觉焦点）
+  // 地台边缘一圈克制的琥珀光圈（自发光收束视觉焦点；亮度低于 Bloom 阈值，不参与泛光）
   const rimGlow = new THREE.Mesh(
     new THREE.TorusGeometry(1.44, 0.0035, 8, 96),
     new THREE.MeshBasicMaterial({ color: 0xffb547, transparent: true, opacity: 0.32, fog: false })

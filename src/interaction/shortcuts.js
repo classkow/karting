@@ -36,6 +36,10 @@ export function initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking
       ctrl.setExplodeUI(next);
     } else if (k === 'r') {
       rig.applyView('home');
+    } else if (k === 'c') {
+      // 换气慢放：与面板开关同一逻辑（§7.5，相对时序为真值）
+      sim.visualSlow = sim.visualSlow === 0.004 ? 0.2 : 0.004;
+      ctrl.setCycleSlowUI(sim.visualSlow === 0.004);
     } else if (k === '?' || k === 'h') {
       help.toggle();
     } else if (k === 'escape') {
