@@ -463,11 +463,21 @@ async function main() {
         // 9. 手机视口组（390×844 + touch 仿真，任务包 §1.2 验收口径）
     // 触屏仿真必须在应用创建【前】启用（isTouch 在启动时采样），故本组自带头加载。
     // 先红后绿：M-A~M-F 在未修复基线上为红（见交付说明红绿记录）。
-    await rpc('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await rpc('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
     await rpc('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-    await rpc('Page.navigate', { url: PAGE_URL });
+    await rpc('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 EdgA/126.0.0.0' });
+    await rpc('Page.navigate', { url: PAGE_URL + '?debug=1' });
     await waitFor(() => evalJs(rpc, '!!window.__kart'), '手机视口应用启动');
     await pump(5);
+    // N4 ?debug=1 诊断浮层（防御性修复 D4 的验收；先红：基线无此浮层）
+    {
+      const diag = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        exists: !!document.getElementById('diag-overlay'),
+        text: (document.getElementById('diag-overlay')?.textContent ?? '').slice(0, 160),
+      })`));
+      check('手机: ?debug=1 诊断浮层可见且含视口/DPR/touch 信息（D4）',
+        diag.exists && diag.text.includes('x') && diag.text.includes('touch:'), `text="${diag.text}"`);
+    }
     const overlapRect = (a, b) => a && b && !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
     const mgeo = () => evalJs(rpc, `(() => {
       const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect().toJSON() ?? null;
@@ -505,6 +515,13 @@ async function main() {
         const buttons = [...card.querySelectorAll('.tm-item')].map((b) => b.getBoundingClientRect().toJSON());
         return { r, buttons, inViewport: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
       })())`));
+      const cardCss = JSON.parse(await evalJs(rpc, `JSON.stringify((() => {
+        const cs = getComputedStyle(document.querySelector('.tm-card'));
+        return { position: cs.position, zIndex: cs.zIndex, bgAlpha: cs.backgroundColor.startsWith('rgba') ? +cs.backgroundColor.split(',')[3].replace(')', '') : 1 };
+      })())`));
+      check('手机: 菜单卡片独立层叠（非 static、z≥1、不透明底，D2）',
+        cardCss.position !== 'static' && +cardCss.zIndex >= 1 && cardCss.bgAlpha === 1,
+        JSON.stringify(cardCss));
       check('手机: 模式菜单完整显示、五个按钮均在视口内有可点尺寸',
         g.menuVisible && card.inViewport && card.buttons.every((b) => b.width > 100 && b.height > 32 && b.left >= 0 && b.right <= g.vw),
         `card=${JSON.stringify(card.r)}`);
@@ -523,6 +540,19 @@ async function main() {
       check('手机: 操作提示不溢出视口（触屏隐藏键盘提示）', g.hintHidden || (g.hint.left >= 0 && g.hint.right <= g.vw),
         g.hintHidden ? 'hidden' : `left=${g.hint.left.toFixed(1)} right=${g.hint.right.toFixed(1)}`);
       check('手机: 自动油门开关不与顶栏重叠', !overlapRect(g.auto, g.topbar), JSON.stringify({ auto: g.auto, topbar: g.topbar }));
+      // N1/N2 真机 GPU 合成盲区防御：毛玻璃(backdrop-filter)在部分移动 GPU 上会把全屏遮罩
+      // 及其子树渲染成不可交互的模糊层（本次报障的最佳解释，仿真不可复现）——
+      // 手机视口下赛道 UI 一律禁用（先红：基线 .tm-wrap/.hud-* 均有 blur）
+      const bf = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        tmWrap: getComputedStyle(document.querySelector('.tm-wrap')).backdropFilter,
+        hudTop: getComputedStyle(document.querySelector('.hud-top')).backdropFilter,
+        hudBl: getComputedStyle(document.querySelector('.hud-bl')).backdropFilter,
+        hudMap: getComputedStyle(document.querySelector('#hud-map')).backdropFilter,
+        htBtn: getComputedStyle(document.querySelector('.ht-btn')).backdropFilter,
+      })`));
+      const bfVals = Object.values(bf);
+      check('手机: 菜单遮罩无 backdrop-filter（N1）', bf.tmWrap === 'none', `tmWrap=${bf.tmWrap}`);
+      check('手机: 赛道 HUD 面板无 backdrop-filter（N2）', bfVals.every((v) => v === 'none'), JSON.stringify(bf));
     }
     // M-F 触屏◀真实按压 → 转向输入进入 sim（先红：接线断时恒 0）
     {

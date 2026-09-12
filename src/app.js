@@ -333,6 +333,7 @@ export function createApp() {
   // ————— 模式切换：展台 ↔ 赛道 —————
   function enterTrack() {
     if (mode === 'track') return;
+    try {
     mode = 'track';
     // 展台态全部收干净：演示/信息卡/爆炸/举升/慢放/环绕
     demoPlayer?.stop();
@@ -367,6 +368,11 @@ export function createApp() {
     btnTrack.textContent = '← 返回展台';
     countdown.active = false;
     menu.showMenu();
+    } catch (e) {
+      // 真机上若建世界/切世界抛错（GPU/纹理限制等），给出可截图的错误卡而不是无声冻结
+      console.error('进入赛道失败:', e);
+      menu.showError(`enterTrack: ${e?.message ?? e}`);
+    }
   }
 
   function exitTrack() {

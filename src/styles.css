@@ -1532,11 +1532,16 @@ body.track-mode #demo-caption {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 7, 11, 0.55);
-  backdrop-filter: blur(3px);
+  /* 不用 backdrop-filter：部分移动 GPU 合成路径会把全屏遮罩连同其子树渲染成
+     不可交互的模糊层（真机报障「毛玻璃、无可操作点」的最佳解释，headless 仿真
+     无移动合成器不可复现，见 docs/调查专题-手机端玻璃屏复查-20260912.md）。
+     深色半透明底已足够聚焦卡片。 */
+  background: rgba(5, 7, 11, 0.72);
   pointer-events: auto;
 }
 .tm-card {
+  position: relative; /* 独立层叠防御：即便遮罩合成异常，卡片自成一层不被吸收 */
+  z-index: 1;
   width: min(430px, calc(100vw - 32px));
   max-height: calc(100vh - 40px);
   overflow: auto;
@@ -1791,4 +1796,39 @@ body.track-mode #demo-caption {
     top: 138px;
     right: 10px;
   }
+}
+
+/* ————— 手机档 backdrop-filter 防御（≤640px）—————
+   与 .tm-wrap 同族风险：赛道 HUD 面板在真机移动 GPU 上若被合成器丢弃，
+   速度/小地图/触屏按钮会整体不可见。手机档一律去毛玻璃改实底（可读性不依赖模糊）。 */
+@media (max-width: 640px) {
+  .hud-top,
+  .hud-bl,
+  #hud-map,
+  .hud-btns button,
+  .ht-btn {
+    backdrop-filter: none;
+    background: rgba(16, 20, 27, 0.94);
+  }
+  .hud-br {
+    backdrop-filter: none;
+  }
+  #help-overlay {
+    backdrop-filter: none;
+    background: rgba(5, 7, 11, 0.8);
+  }
+  .help-card {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+/* 菜单错误卡（进入赛道失败的可见回报，D5） */
+.tm-err {
+  color: var(--danger);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-all;
+  margin: 4px 0 12px;
 }

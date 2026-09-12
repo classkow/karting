@@ -114,5 +114,20 @@ export function initTrackMenu(container, { storage, onPractice, onRace, onExit, 
     get resultsVisible() {
       return !elResults.classList.contains('hidden');
     },
+    // 进入赛道失败时的可读错误卡（真机诊断：截图即可回报，D5 防御性修复）
+    showError(text) {
+      elPanel.classList.add('hidden');
+      elResults.innerHTML = `
+        <div class="tm-card tm-result">
+          <div class="tm-head"><b>进入赛道出错</b><span>请整屏截图回报</span></div>
+          <p class="tm-err">${String(text).replace(/[<>&]/g, '').slice(0, 300)}</p>
+          <div class="tm-actions"><button class="ghost sm" data-mode="exit">返回展台</button></div>
+        </div>`;
+      elResults.classList.remove('hidden');
+      container.classList.remove('hidden');
+      elResults.querySelectorAll('.tm-actions button').forEach((btn) => {
+        btn.addEventListener('click', () => onExit?.());
+      });
+    },
   };
 }
