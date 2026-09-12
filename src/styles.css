@@ -1536,6 +1536,14 @@ body.track-mode #demo-caption {
 #track-menu.hidden {
   display: none;
 }
+/* .hidden 全靠逐元素选择器收口，此前漏了 .tm-wrap 家族：#tm-panel/#tm-results
+   挂上 hidden 仍是 display:flex + pointer-events:auto 的全屏层——冲线结算时
+   #tm-results 盖住菜单（DOM 靠后者在上），点「更换模式」后 showMenu() 把结果面板
+   挂 hidden 却藏不掉，残影层截胡全部点击（回归 BUG：更换模式"点了没反应"）。
+   收口在 .tm-wrap 作用域而非全局 .hidden：避免通用规则误伤其它 display 语义。 */
+.tm-wrap.hidden {
+  display: none;
+}
 .tm-wrap {
   position: absolute;
   inset: 0;

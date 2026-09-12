@@ -4,7 +4,8 @@ import { createTrackModel } from '../src/sim/track.js';
 import { resetLapTiming } from '../src/sim/driving.js';
 import {
   createRaceEntrants, gridPose, rankEntrants, finishEntrant,
-  resolveKartCollisions, RACE_LAPS, GRID_ROW, GRID_COL, KART_RADIUS,
+  resolveKartCollisions, kartsOverlap, kartContact,
+  RACE_LAPS, GRID_ROW, GRID_COL, KART_SHAPE,
 } from '../src/sim/race.js';
 
 const track = createTrackModel();
@@ -31,11 +32,11 @@ test('比赛：发车格全部在起点线后、双排错列、玩家末位', ()
   const [a, b] = entrants.filter((e) => e.gridSlot <= 1).sort((x, y) => x.gridSlot - y.gridSlot);
   const gap = Math.hypot(a.st.x - b.st.x, a.st.z - b.st.z);
   assert.ok(gap > GRID_COL * 1.4 && gap < GRID_COL * 2.6, `同排间距 ${gap.toFixed(2)}m`);
-  // 相邻两车互不重叠（碰撞半径口径）
+  // 相邻两车互不重叠（新碰撞形状口径：SAT 旋转矩形，车宽 1.445/车长 1.69 包络）
   for (let i = 0; i < entrants.length; i++) {
     for (let j = i + 1; j < entrants.length; j++) {
-      const d = Math.hypot(entrants[i].st.x - entrants[j].st.x, entrants[i].st.z - entrants[j].st.z);
-      assert.ok(d > KART_RADIUS * 1.6, `${i}-${j} 间距 ${d.toFixed(2)}m 过近`);
+      assert.ok(!kartsOverlap(entrants[i].st, entrants[j].st),
+        `${i}-${j} 发车格即碰撞（新形状口径）`);
     }
   }
 });
@@ -72,19 +73,76 @@ test('比赛：完赛判定（3 圈）与重复冲线幂等', () => {
   assert.equal(e.finishTime, 120.5);
 });
 
-test('比赛：碰撞分离——重叠的车被推开且法向速度交换', () => {
-  const entrants = createRaceEntrants('rookie', track, null);
-  const [a, b] = entrants;
-  // 摆成头对头逼近：a 朝 +z 前进，b 掉头朝 −z 前进（车体 vz 为正 = 各自向前）
-  a.st.x = 0; a.st.z = 0; a.st.yaw = 0; a.st.vx = 0; a.st.vz = 10;
-  b.st.x = 0.1; b.st.z = 0.5; b.st.yaw = Math.PI; b.st.vx = 0; b.st.vz = 10;
-  const contacts = resolveKartCollisions(entrants.map((e) => e.st));
+// ————— 碰撞形状（BUG 1 修正：等半径圆 → SAT 旋转矩形）—————
+// 主报障场景 = 侧向/斜向：旧 KART_RADIUS=1.15 圆把侧向判定放大到 ±2.3m（车宽 3.2 倍）。
+// 场景矩阵：侧擦不误触发 / 侧贴仍触发且法线横向 / 追尾仍触发且速度交换 /
+// 斜碰（T-bone）法线正确 / 正碰深穿透分离不穿模。
+
+function mkKart(x, z, yaw, vz = 0, vx = 0) {
+  return { x, z, yaw, vz, vx, yawRate: 0 };
+}
+
+test('碰撞：侧向擦碰不再隔空误触发（1.6m 间距无接触，旧圆口径 2.3m 必撞）', () => {
+  const a = mkKart(0, 0, 0);
+  const b = mkKart(1.6, 0, 0); // 并排同向，横向间距 1.6m > 车宽 1.445m
+  assert.equal(kartsOverlap(a, b), false, '并排 1.6m 不应接触');
+  const contacts = resolveKartCollisions([a, b]);
+  assert.equal(contacts, 0);
+  assert.equal(a.x, 0, '无接触不得产生分离位移');
+});
+
+test('碰撞：侧贴仍触发，法线横向、横向推开+接触点偏航扰动', () => {
+  const a = mkKart(0, 0, 0);
+  const b = mkKart(1.35, 0, 0); // 1.35m < 1.445m：轮对轮重叠
+  const hit = kartContact(a, b);
+  assert.ok(hit, '侧贴应接触');
+  assert.ok(Math.abs(hit.nx) > 0.9, `法线应横向 nx=${hit.nx.toFixed(3)}`);
+  resolveKartCollisions([a, b]);
+  const after = Math.abs(b.x - a.x);
+  assert.ok(after >= KART_SHAPE.halfW * 2 - 0.05, `分离后横向间距 ${after.toFixed(3)}m（应 ≈ ${(KART_SHAPE.halfW * 2).toFixed(3)}）`);
+});
+
+test('碰撞：追尾仍触发——纵向法线 + 前后速度交换感', () => {
+  const a = mkKart(0, 0, 0, 10);   // 后车 10m/s
+  const b = mkKart(0, 1.6, 0, 2);  // 前车同向 2m/s，尾线 1.6−0.71=0.89 < 头线 0.98 → 接触
+  const hit = kartContact(a, b);
+  assert.ok(hit, '追尾应接触');
+  assert.ok(Math.abs(hit.nz) > 0.9, `法线应纵向 nz=${hit.nz.toFixed(3)}`);
+  const contacts = resolveKartCollisions([a, b]);
   assert.equal(contacts, 1);
-  const dist = Math.hypot(b.st.x - a.st.x, b.st.z - a.st.z);
-  assert.ok(dist >= KART_RADIUS * 2 - 0.15, `分离后间距 ${dist.toFixed(2)}m（应 ≈ ${KART_RADIUS * 2}）`);
-  // 迎面相对速度应显著衰减（冲量交换），且没有穿模到另一侧
-  const rel = Math.abs(a.st.vz) + Math.abs(b.st.vz);
-  assert.ok(rel < 8, `分离后车体速度和 ${rel.toFixed(1)}（迎面 10+10 应大幅衰减）`);
+  // 冲量沿纵向交换：后车显著减速、前车加速，仍同向前行
+  assert.ok(a.vz < 6 && a.vz > 0, `后车 vz=${a.vz.toFixed(2)}（应减速但不弹回）`);
+  assert.ok(b.vz > a.vz, `前车 vz=${b.vz.toFixed(2)} 应快于后车（速度交换感）`);
+  const dist = Math.hypot(b.x - a.x, b.z - a.z);
+  assert.ok(dist > 1.55, `分离后中心距 ${dist.toFixed(2)}m（应 ≈ 车长 1.69 附近）`);
+});
+
+test('碰撞：斜碰（T-bone）分离法线正确——横穿车撞静止车侧面', () => {
+  // a 静止朝 +z；b 朝 −x 横穿，车头撞 a 右侧：b 头线 1.5−0.98=0.52 < a 右缘 0.72 → 接触
+  const a = mkKart(0, 0, 0, 0);
+  const b = mkKart(1.5, 0.2, -Math.PI / 2, 5);
+  const hit = kartContact(a, b);
+  assert.ok(hit, 'T-bone 应接触');
+  assert.ok(Math.abs(hit.nx) > 0.9, `法线应横向 nx=${hit.nx.toFixed(3)}（撞的是侧面）`);
+  const contacts = resolveKartCollisions([a, b]);
+  assert.equal(contacts, 1);
+  // a 从 +x 侧（左侧面）受撞，被推离撞击点 → −x（分离位移 ≈ depth/2）；b 的横穿速度被削
+  assert.ok(a.x < -0.05, `a 应被推向 −x（x=${a.x.toFixed(2)}）`);
+  assert.ok(a.vx < 0, `a 获得向 −x 的速度（vx=${a.vx.toFixed(2)}）`);
+  const bWorldVx = b.vx * Math.cos(b.yaw) + b.vz * Math.sin(b.yaw);
+  assert.ok(bWorldVx > -4.5, `b 横穿速度应衰减（world vx=${bWorldVx.toFixed(2)}，初值 −5）`);
+});
+
+test('碰撞：正碰深穿透（旧用例等价场景）——分离后大幅衰减、不穿到另一侧', () => {
+  // 头对头逼近：深度重叠 0.5m 级别，两轴深度近平局 → 接近轴决胜须给出纵向法线
+  const a = mkKart(0, 0, 0, 10);
+  const b = mkKart(0, 0.5, Math.PI, 10); // b 朝 −z 前进（车体 vz 为正 = 各自向前）
+  const contacts = resolveKartCollisions([a, b]);
+  assert.equal(contacts, 1);
+  const dist = Math.hypot(b.x - a.x, b.z - a.z);
+  assert.ok(dist > 1.3, `分离后间距 ${dist.toFixed(2)}m`);
+  const rel = Math.abs(a.vz) + Math.abs(b.vz);
+  assert.ok(rel < 9, `分离后车体速度和 ${rel.toFixed(1)}（迎面 10+10 应大幅衰减）`);
 });
 
 test('比赛：初帧排名——total 相等按 gridSlot 升序破序，玩家 P4（P2-1，变红抽查锚点）', () => {

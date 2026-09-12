@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 import { M } from './materials.js';
 import { numberPlate } from '../core/textures.js';
+import { updateDriverHead } from './parts/driver.js';
 
 // ————— AI 车体：克隆玩家车 + 逐帧位姿动画 —————
 // 刻意不进 registry：AI 车不参与爆炸/拾取/机构更新器（builder 的 refs 是模块级单例，
 // 多次整车装配会互相覆盖）。克隆共享几何与大部分材质，仅车漆与号码牌独立。
 // 机构动画（活塞/链条等）在克隆上静止——追逐视角下不可察，换来的代价是零 registry 风险。
+// 车手随 clone(true) 自带（赛道态克隆时玩家车 driver 可见）：赛车服走 paintRed
+// 引用替换自动换本队涂装，头盔/靴/面罩共享材质；头部微动经 driver-head 命名查找。
 
 const _euler = new THREE.Euler();
 
@@ -29,9 +32,10 @@ export function buildAIVisual(playerKart, { color, number }) {
   return clone;
 }
 
-// 逐帧动画器：root 位姿 / 簧载姿态 / 四轮滚动 / 前轮偏转（绕自身轮心，小角近似主销偏转）
+// 逐帧动画器：root 位姿 / 簧载姿态 / 四轮滚动 / 前轮偏转（绕自身轮心，小角近似主销偏转）/ 车手头部微动
 export function createAIVisualAnimator(clone) {
   const sprung = clone.children[0]; // builder 约定：root 第一个孩子是簧载组
+  const head = clone.getObjectByName('driver-head');
   const wheels = {};
   clone.traverse((o) => {
     const pid = o.userData?.partId;
@@ -60,6 +64,7 @@ export function createAIVisualAnimator(clone) {
         wheels['wheel-fr'].rotation.x += wFront;
         wheels['wheel-fr'].rotation.y = shell?.steerAngleR ?? 0;
       }
+      updateDriverHead(head, st); // 车手头部惯性微动（与玩家车同 helper 同口径）
     },
   };
 }

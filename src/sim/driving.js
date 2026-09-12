@@ -223,8 +223,11 @@ export function stepDriving(st, s, track, dt, { launchLock = false } = {}) {
 
   // 倒车辅助：停稳后按住刹车（无油门）缓慢倒车。锁定期（倒计时/菜单/完赛）禁用——
   // AI 带刹待发、玩家按住刹车时不得从发车格溜车（P1-1）。
+  // 辅助推力须顶开满舵倒车的轮胎搓阻（fMaxF·sinδmax ≈ 203N + 滚阻 ≈20N），
+  // 否则满舵倒车在低速运动学区死锁：搓阻的纵向分量恰好抵消驱力，yaw 又被
+  // wKin 混合钉在 0 搓不出侧偏。此前靠侧偏符号 BUG 反向"顺推"才倒得动。
   const reversing = !launchLock && brake > 0.5 && throttle < 0.05 && st.vz < 0.5 && st.vz > -P.reverseSpeed;
-  if (reversing) fDrive = -m * 1.1;
+  if (reversing) fDrive = -m * 1.8;
 
   // ——— 阻力（草地颠簸额外放大气动/滚动阻力：冲出路面后能真实减速）———
   const drag = 0.5 * 1.2 * P.dragCdA * (1 + 6 * grassDepth) * st.vz * Math.abs(st.vz);
@@ -251,8 +254,12 @@ export function stepDriving(st, s, track, dt, { launchLock = false } = {}) {
   const stiffR = P.stiffR * (st.drifting ? 0.42 : 1) * (brake > 0.7 ? 0.8 : 1);
 
   // ——— 轮胎侧偏滑移角（只依赖速度场，迭代外算一次）———
+  // 倒车口径：转向产生的侧偏随滚动方向反号，侧向速度产生的侧偏不随滚动方向反号
+  // （真实车辆倒车打左舵 = 车尾向左甩、车头向右摆，即运动学 ψ̇=v·tanδ/L 中 v 带符号）。
+  // vz≥0 时 dirSign=1 与原式严格一致；vz<0 只翻转 steer 项。后轮无转向项，本就方向无关。
   const vLongSafe = Math.max(Math.abs(st.vz), 1.2); // 低速防奇异（分母）
-  const slipF = steerAngle - Math.atan2(st.vx + st.yawRate * lf, vLongSafe);
+  const dirSign = st.vz < 0 ? -1 : 1;
+  const slipF = dirSign * steerAngle - Math.atan2(st.vx + st.yawRate * lf, vLongSafe);
   const slipR = -Math.atan2(st.vx - st.yawRate * lr, vLongSafe);
 
   // ——— 载荷 ↔ 轮胎力 不动点（两轮迭代）———
@@ -305,7 +312,9 @@ export function stepDriving(st, s, track, dt, { launchLock = false } = {}) {
   st.yawRate += yawAcc * dt;
   st.yawRate *= 1 - Math.min(1, dt * (st.drifting ? 1.2 : 2.6)); // 航向角阻尼（漂移时放松）
 
-  const yawRateKin = (Math.abs(st.vz) * Math.tan(steerAngle)) / P.wheelbase;
+  // 运动学混合目标：v 带符号（此前 Math.abs 把倒车符号抹掉 = 倒车按前进口径响应，
+  // 即用户报障「倒车方向盘转向逻辑反了」的根因；真实口径 = 倒车打左舵车头向右摆）
+  const yawRateKin = (st.vz * Math.tan(steerAngle)) / P.wheelbase;
   st.yawRate = lerp(st.yawRate, yawRateKin, wKin);
   st.vx *= 1 - wKin * 0.85;
 

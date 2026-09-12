@@ -115,3 +115,55 @@ test('端到端：满舵左转（steerAngle>0）→ yaw 增大 = 追逐相机下
   for (let i = 0; i < 60; i++) tick();
   assert.ok(st.yaw > yaw0 + 0.05, `yaw ${yaw0.toFixed(3)} → ${st.yaw.toFixed(3)}（应增大=屏幕左转）`);
 });
+
+// ————— 倒车转向契约（回归用户报障：倒车时方向盘左右逻辑反了）—————
+// 真实车辆倒车物理口径：运动学 ψ̇=v·tanδ/L 的 v 带符号——倒车打左舵
+// = 车尾向左甩、车头向右摆（yaw 减小），与前进恰好相反。追逐相机在车后：
+// 倒车中按【左】看到车尾向屏幕左甩、车头向右摆。走真实输入通道（停稳按住
+// 刹车 = 倒车辅助）验证，兼覆盖低速运动学混合区（|vz|≤2.2 全程 wKin>0）。
+
+function reverseHarness() {
+  const lab = createTrackModel({
+    points: [[-80, -350], [0, -358], [80, -350], [86, -175], [86, 0], [86, 175], [80, 350], [0, 358], [-80, 350], [-86, 175], [-86, 0], [-86, -175]],
+    width: 14,
+  });
+  const sim = createSim();
+  sim.engineOn = true;
+  sim.rpm = 6000;
+  sim.throttle = 0;
+  sim.brakeTarget = 1;
+  sim.brake = 1; // 停稳按住刹车 → 倒车辅助（driving.js reversing 通道）
+  const st = createDrivingState();
+  resetDrivingState(st, lab, 0);
+  return { sim, st, lab };
+}
+
+test('倒车契约：倒车辅助 + 左舵 → yaw 减小（车头右摆 = 真实倒车物理）', () => {
+  const { sim, st, lab } = reverseHarness();
+  sim.steer = -1; // 键盘【左】：steerAngleL=+0.3 = 左舵
+  sim.steerSmooth = -1;
+  sim.steerAngleL = 0.3;
+  sim.steerAngleR = 0.19;
+  const tick = () => {
+    sim.step(1 / 60);
+    stepDriving(st, sim, lab, 1 / 60);
+  };
+  for (let i = 0; i < 60 * 4; i++) tick(); // 4s：倒到 −2.2m/s 辅助限速并保持
+  assert.ok(st.vz < -1.5, `应在真实倒车中 vz=${st.vz.toFixed(2)}`);
+  assert.ok(st.yaw < -0.05, `倒车左舵 4s yaw=${st.yaw.toFixed(3)}（应减小=车头右摆；修复前按前进口径会增大）`);
+});
+
+test('倒车契约：倒车辅助 + 右舵 → yaw 增大（与前进转向镜像）', () => {
+  const { sim, st, lab } = reverseHarness();
+  sim.steer = 1; // 键盘【右】：steerAngleL=−0.3 = 右舵
+  sim.steerSmooth = 1;
+  sim.steerAngleL = -0.3;
+  sim.steerAngleR = -0.19;
+  const tick = () => {
+    sim.step(1 / 60);
+    stepDriving(st, sim, lab, 1 / 60);
+  };
+  for (let i = 0; i < 60 * 4; i++) tick();
+  assert.ok(st.vz < -1.5, `应在真实倒车中 vz=${st.vz.toFixed(2)}`);
+  assert.ok(st.yaw > 0.05, `倒车右舵 4s yaw=${st.yaw.toFixed(3)}（应增大=车头左摆）`);
+});

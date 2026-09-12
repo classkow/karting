@@ -22,6 +22,7 @@ import { createDemoPlayer } from './ui/demoPlayer.js';
 import { initTrackHUD } from './ui/hud.js';
 import { initTrackMenu } from './ui/trackMenu.js';
 import { buildAIVisual, createAIVisualAnimator, disposeAIVisual } from './kart/aiKarts.js';
+import { updateDriverHead } from './kart/parts/driver.js';
 
 // ————— 应用装配与主循环 —————
 // 依赖方向：app → { core, kart, sim, interaction, ui }；kart/sim 不依赖 interaction/ui。
@@ -71,6 +72,7 @@ export function createApp() {
   // 驾驶位姿更新器：注册序在所有部件更新器之后（buildKart 内各系统先跑），
   // 赛道模式下最后落位——机构位姿（转向/举升解）同帧生效，零帧滞后。
   const _poseEuler = new THREE.Euler();
+  const driverHead = kart.getObjectByName('driver-head'); // 车手头部惯性微动（driver.js）
   registry.addUpdate((dt, s) => {
     if (!s.drivingActive) return;
     kart.position.set(driving.x, 0, driving.z);
@@ -80,6 +82,7 @@ export function createApp() {
     const sprung = kart.userData.sprung;
     sprung.quaternion.setFromEuler(_poseEuler);
     sprung.position.y = driving.heave ?? 0;
+    updateDriverHead(driverHead, driving);
     // 前轮按地面速度滚动（后轮由 wheels 更新器按 s.wheelOmega 滚，半径不同分开口径）
     const wfl = registry.getPart('wheel-fl')?.group;
     const wfr = registry.getPart('wheel-fr')?.group;
@@ -361,6 +364,7 @@ export function createApp() {
     resetDrivingState(driving, track, sim.time);
     kart.position.set(driving.x, 0, driving.z);
     kart.rotation.y = driving.yaw;
+    kart.getObjectByName('driver').visible = true; // 赛道态点亮车手（展台保持裸车）
     driveCam.snap();
     hud.setCam(DRIVE_CAMS[0]);
     hud.setRaceInfo(null);
@@ -400,6 +404,7 @@ export function createApp() {
     controls.enabled = true;
     kart.position.set(0, 0.02, 0);
     kart.rotation.y = 0;
+    kart.getObjectByName('driver').visible = false; // 展台还原为裸车
     document.getElementById('track-hud').classList.add('hidden');
     document.body.classList.remove('track-mode');
     btnTrack.textContent = '🏁 上赛道';
@@ -763,6 +768,7 @@ export function createApp() {
   // step 用于在无头/限帧环境下手动泵帧，确定性验证机构运动；render=false 时跳过渲染，纯步进飞快）
   return {
     sim,
+    kart, // 调试/冒烟：车手挂载断言等走 getObjectByName（userData 经 clone JSON 化不可引用）
     getPart: (id) => registry.getPart(id),
     registry,
     camera,
@@ -777,6 +783,7 @@ export function createApp() {
     menu,
     get race() { return race; },
     get mode() { return mode; },
+    get drawCalls() { return renderer.info.render.calls; }, // 渲染一帧后读取（step(dt,n,true)）
     step: (dt = 1 / 60, n = 1, render = false) => {
       for (let i = 0; i < n; i++) frame(dt, dt, render);
     },

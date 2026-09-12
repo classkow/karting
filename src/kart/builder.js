@@ -8,6 +8,7 @@ import { buildSteering } from './parts/steering.js';
 import { buildJacking } from './parts/jacking.js';
 import { buildBrakes } from './parts/brakes.js';
 import { buildCockpit } from './parts/cockpit.js';
+import { buildDriver } from './parts/driver.js';
 
 // ————— 整车装配 —————
 export function buildKart(reg) {
@@ -37,6 +38,9 @@ export function buildKart(reg) {
   buildJacking(sprung, reg);    // 必须在 buildSteering 之后注册：读其解算角（registry 按注册序执行）
   buildBrakes(sprung, reg);
   buildCockpit(sprung, reg);
+  // 车手：不进 registry（非机构部件，不参与爆炸/拾取/举升），默认隐藏 = 展台裸车；
+  // 赛道模式由 app.js 点亮，AI 克隆在赛道态发生、车手随 clone(true) 自带。
+  buildDriver(sprung);
 
   root.traverse((o) => {
     // userData.noShadow 标记的网格不投影（气体云等体积视觉效果，§七.3）

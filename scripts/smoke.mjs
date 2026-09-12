@@ -159,6 +159,23 @@ async function main() {
     await waitFor(() => evalJs(rpc, '!!window.__kart'), '应用启动（window.__kart）');
     check('应用启动无异常', true);
 
+    // 展台口径：车手装配但不可见（裸车演示，任务包 §一.1）；hidden 类全项目清点——
+    // 所有带 hidden 的元素必须真实 display:none（同类"类挂了规则没了"漏网即在此爆红，
+    // BUG 3 根因 .tm-wrap.hidden 缺规则在本断言可复现：子元素计算 display 不随父级继承）
+    {
+      const drv = JSON.parse(await evalJs(rpc, `JSON.stringify((() => {
+        const d = __kart.kart.getObjectByName('driver');
+        return { exists: !!d, visible: d ? d.visible : null, meshes: d ? d.children.length : 0 };
+      })())`));
+      check('展台: 车手存在但隐藏（裸车演示口径）', drv.exists && drv.visible === false && drv.meshes === 3,
+        JSON.stringify(drv));
+      const leaked = JSON.parse(await evalJs(rpc, `JSON.stringify([...document.querySelectorAll('.hidden')]
+        .map((el) => ({ sel: el.id ? '#' + el.id : '.' + String(el.className).split(' ')[0], display: getComputedStyle(el).display }))
+        .filter((e) => e.display !== 'none'))`));
+      check('展台: hidden 类全项目清点——所有 hidden 元素均真实 display:none', leaked.length === 0,
+        JSON.stringify(leaked));
+    }
+
     const pump = (n) => evalJs(rpc, `__kart.step(1/30, ${n}); "ok"`);
 
     // 3. 机构运动采样：启动发动机并泵帧，前后对比
@@ -350,6 +367,22 @@ async function main() {
     check('赛道: enterTrack 进入驾驶模式', (await evalJs(rpc, `__kart.mode`)) === 'track');
     check('赛道: 模式菜单可见', await evalJs(rpc, `!document.getElementById('track-menu').classList.contains('hidden')`));
     check('赛道: HUD 容器可见', await evalJs(rpc, `!document.getElementById('track-hud').classList.contains('hidden')`));
+    // BUG 3 修复断言（先红：基线 .tm-wrap.hidden 无规则 → display:flex 残影层）
+    {
+      const tm = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        results: getComputedStyle(document.getElementById('tm-results')).display,
+      })`));
+      check('赛道: 未启用的结算容器真实隐藏（tm-wrap.hidden 规则在位）',
+        tm.results === 'none', JSON.stringify(tm));
+      const hit = await evalJs(rpc, `(() => {
+        const btn = document.querySelector('#tm-panel [data-mode="practice"]');
+        const r = btn.getBoundingClientRect();
+        const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return btn === el || btn.contains(el);
+      })()`);
+      check('赛道: 模式按钮 elementFromPoint 命中自身（无残影层截胡）', hit === true);
+    }
+    check('赛道: 玩家车手已挂载可见', await evalJs(rpc, `__kart.kart.getObjectByName('driver')?.visible === true`));
     await evalJs(rpc, `document.querySelector('#track-menu [data-mode="practice"]').click(); "ok"`);
     check('赛道: 选练习后菜单关闭', await evalJs(rpc, `document.getElementById('track-menu').classList.contains('hidden')`));
     // P1-1 倒计时锁定期刹车不得倒车（变红抽查锚点）
@@ -388,6 +421,26 @@ async function main() {
     const hudSpeed = await evalJs(rpc, `+document.getElementById('hud-speed').textContent`);
     // HUD 速度 10Hz 节流，加速中允许 ≤2.5km/h 的显示滞后
     check('赛道: HUD km/h 与动力学一致（10Hz 节流容差）', Math.abs(hudSpeed - d1.kmh) < 2.5, `hud=${hudSpeed} real=${d1.kmh.toFixed(1)}`);
+
+    // 车手 draw call 增量：postfx 合成器会把 renderer.info 重置成最后一 pass 计数（恒 1），
+    // 先切直渲通道（画质开关）再隐藏/显示各渲一帧取差（车手 = 服/靴/盔/面罩 4 网格 ×1 车；
+    // 阴影通道也计入 info，上限放宽到 10）
+    {
+      await evalJs(rpc, `document.getElementById('tg-quality').click(); "ok"`);
+      const dcOff = await evalJs(rpc, `(() => {
+        __kart.kart.getObjectByName('driver').visible = false;
+        __kart.step(1/30, 2, true);
+        return __kart.drawCalls;
+      })()`);
+      const dcOn = await evalJs(rpc, `(() => {
+        __kart.kart.getObjectByName('driver').visible = true;
+        __kart.step(1/30, 2, true);
+        return __kart.drawCalls;
+      })()`);
+      await evalJs(rpc, `document.getElementById('tg-quality').click(); "ok"`);
+      check('性能: 单车手 draw call 增量 ∈ [3,10]（服/靴/盔/面罩 4 网格）',
+        dcOn - dcOff >= 3 && dcOn - dcOff <= 10, `off=${dcOff} on=${dcOn} Δ=${dcOn - dcOff}`);
+    }
 
     // 赛道截图（此时仍在起跑直道上，追逐相机跟车：路面/路肩/轮胎墙/树全入画）
     {
@@ -429,6 +482,7 @@ async function main() {
       backState.mode === 'showroom' && Math.abs(backState.y - 0.145) < 1e-6 && backState.hud
         && backState.throttle === 0 && backState.active === false,
       JSON.stringify(backState));
+    check('赛道: 退出后车手卸载（展台还原裸车）', await evalJs(rpc, `__kart.kart.getObjectByName('driver').visible === false`));
 
     // 8. 赛道·比赛模式（菜单 → 新锐组 → AI 同场竞技）
     await evalJs(rpc, '__kart.enterTrack(); "ok"');
@@ -453,12 +507,48 @@ async function main() {
     check('比赛: AI 都在赛道上（横向偏移 < 半宽+缓冲）', raceState.onTrack.every((v) => Math.abs(+v) < 11),
       raceState.onTrack.join(','));
     check('比赛: AI 车体克隆已入场景', raceState.visuals === true);
+    check('比赛: AI 克隆含可见车手且赛车服为本队涂装（paintRed 引用替换）', await evalJs(rpc,
+      `__kart.race.racers.every((r) => {
+        const d = r.visual.getObjectByName('driver');
+        const suit = d && d.getObjectByName('driver-suit');
+        return !!d && d.visible === true && !!suit && suit.material.color.getHexString() !== 'b61e2c';
+      })`));
     {
       await pump(2);
       const shotRace = await rpc('Page.captureScreenshot', { format: 'png' });
       writeFileSync(join(OUT_DIR, '07-race.png'), Buffer.from(shotRace.data, 'base64'));
       console.log('  截图 .tmp/smoke/07-race.png');
     }
+    // 冲线结算回归（BUG 3 全链路）：置玩家完成 3 圈 → 真实比赛流出结算面板 →
+    // 「更换模式」回菜单。基线红点 = 点击后结算容器 display 仍为 flex（残影层截胡菜单）。
+    await evalJs(rpc, '__kart.driving.lap = 3; "ok"');
+    await pump(3);
+    const fin = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      over: __kart.race.over,
+      results: __kart.menu.resultsVisible,
+      menu: __kart.menu.menuVisible,
+    })`));
+    check('比赛: 玩家冲线出结算面板（race.over + 结果可见 + 菜单收起）',
+      fin.over && fin.results && !fin.menu, JSON.stringify(fin));
+    const menuHit = await evalJs(rpc, `(() => {
+      const btn = document.querySelector('#tm-results [data-mode="menu"]');
+      if (!btn) return false;
+      const r = btn.getBoundingClientRect();
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return btn === el || btn.contains(el);
+    })()`);
+    check('结算: 「更换模式」按钮 elementFromPoint 命中自身', menuHit === true);
+    await evalJs(rpc, `document.querySelector('#tm-results [data-mode="menu"]').click(); "ok"`);
+    await pump(2);
+    const backMenu = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      menu: __kart.menu.menuVisible,
+      results: getComputedStyle(document.getElementById('tm-results')).display,
+      panel: getComputedStyle(document.getElementById('tm-panel')).display,
+    })`));
+    check('结算: 点「更换模式」→ 菜单回归且结算容器真实隐藏（回归 BUG 根因）',
+      backMenu.menu === true && backMenu.results === 'none' && backMenu.panel !== 'none',
+      JSON.stringify(backMenu));
+
     // 弃赛回菜单（Esc 语义）→ 再退出
     await evalJs(rpc, '__kart.exitTrack(); "ok"');
     await pump(10);

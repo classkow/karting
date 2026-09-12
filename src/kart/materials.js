@@ -63,6 +63,11 @@ export const M = {
   }),
   // 座垫织物的深色
   fabric: new THREE.MeshPhysicalMaterial({ color: 0x1d2024, roughness: 0.94, metalness: 0.0, sheen: 0.4, sheenColor: new THREE.Color(0x30343a) }),
+  // 车手头盔（亮面白，全队通用不随涂装——辨识靠赛车服 = 车漆同色）
+  helmet: new THREE.MeshPhysicalMaterial({
+    color: 0xe8e6df, metalness: 0.05, roughness: 0.26,
+    clearcoat: 0.8, clearcoatRoughness: 0.2, envMapIntensity: 0.9,
+  }),
   // 剖视气缸（透射玻璃）
   linerGlass: new THREE.MeshPhysicalMaterial({
     color: 0xd9ecf7, metalness: 0.0, roughness: 0.06,
