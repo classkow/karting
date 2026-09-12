@@ -225,6 +225,18 @@ test('计圈：沿赛道推进一整圈 → lap+1、圈时合理', () => {
     `圈时 ${(sc.st.lastLapMs / 1000).toFixed(1)}s vs 路径时间 ${(track.length / 15).toFixed(1)}s`);
 });
 
+test('倒计时锁定期：按住刹车不得触发倒车辅助（P1-1，变红抽查锚点）', () => {
+  const sc = scene({});
+  sc.sim.throttle = 0;
+  sc.sim.brakeTarget = 1;
+  sc.sim.brake = 1;
+  const x0 = sc.st.x;
+  const z0 = sc.st.z;
+  for (let i = 0; i < 180; i++) tick(sc, 1 / 60, { launchLock: true }); // 3s
+  assert.ok(Math.abs(sc.st.vz) < 0.01, `3s 后 vz=${sc.st.vz.toFixed(3)}（锁定期不得倒车）`);
+  assert.ok(Math.hypot(sc.st.x - x0, sc.st.z - z0) < 0.05, `3s 位移 ${Math.hypot(sc.st.x - x0, sc.st.z - z0).toFixed(3)}m（<0.05m）`);
+});
+
 test('respawn 语义：resetDrivingState 摆回发车位并清速度', () => {
   const sc = scene({});
   for (let i = 0; i < 60 * 5; i++) tick(sc);

@@ -99,6 +99,7 @@ export function createDrivingState() {
     speed: 0,             // 真实速度（m/s，合速度）
     wheelOmegaF: 0,       // 前轮视觉角速度（rad/s）
     roll: 0, pitch: 0,    // 动态姿态目标（rad，叠加在真实举升解之上）
+    heave: 0,             // 簧载组升降（真实举升解，位姿更新器落位）
     grassShake: 0,        // 相机抖动幅度
   };
 }
@@ -168,7 +169,9 @@ export function resetLapTiming(st, simTime, track) {
   st.wrongWayT = 0;
   st.total = track ? track.signedDelta(st.s) : 0;
   return st;
-}export function stepDriving(st, s, track, dt, { launchLock = false } = {}) {
+}
+
+export function stepDriving(st, s, track, dt, { launchLock = false } = {}) {
   const P = PHYS;
   const m = P.mass;
   const g = 9.81;
@@ -218,8 +221,9 @@ export function resetLapTiming(st, simTime, track) {
   // 打滑期被负载压在接合带 = "起步喘振"）。松油门后状态机自会拉回怠速，不在此干预。
   if (engaged) s.rpm = rpmEff;
 
-  // 倒车辅助：停稳后按住刹车（无油门）缓慢倒车
-  const reversing = brake > 0.5 && throttle < 0.05 && st.vz < 0.5 && st.vz > -P.reverseSpeed;
+  // 倒车辅助：停稳后按住刹车（无油门）缓慢倒车。锁定期（倒计时/菜单/完赛）禁用——
+  // AI 带刹待发、玩家按住刹车时不得从发车格溜车（P1-1）。
+  const reversing = !launchLock && brake > 0.5 && throttle < 0.05 && st.vz < 0.5 && st.vz > -P.reverseSpeed;
   if (reversing) fDrive = -m * 1.1;
 
   // ——— 阻力（草地颠簸额外放大气动/滚动阻力：冲出路面后能真实减速）———

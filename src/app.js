@@ -757,7 +757,7 @@ export function createApp() {
     explode,
     demoPlayer,
     track,
-    driving,
+    get driving() { return driving; }, // 比赛模式会切到发车格实例，必须动态取（P2-2）
     driveKeys,
     enterTrack,
     exitTrack,

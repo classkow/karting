@@ -352,7 +352,15 @@ async function main() {
     check('赛道: HUD 容器可见', await evalJs(rpc, `!document.getElementById('track-hud').classList.contains('hidden')`));
     await evalJs(rpc, `document.querySelector('#track-menu [data-mode="practice"]').click(); "ok"`);
     check('赛道: 选练习后菜单关闭', await evalJs(rpc, `document.getElementById('track-menu').classList.contains('hidden')`));
-    await pump(45); // 1.5s：倒计时进行中
+    // P1-1 倒计时锁定期刹车不得倒车（变红抽查锚点）
+    await evalJs(rpc, `__kart.driveKeys.press('brake', true); "ok"`);
+    const brakeP0 = JSON.parse(await evalJs(rpc, `JSON.stringify({ x: __kart.driving.x, z: __kart.driving.z })`));
+    await pump(60); // 2s：倒计时仍在中段
+    const brakeP1 = JSON.parse(await evalJs(rpc, `JSON.stringify({ x: __kart.driving.x, z: __kart.driving.z })`));
+    const brakeMoved = Math.hypot(brakeP1.x - brakeP0.x, brakeP1.z - brakeP0.z);
+    check('倒计时: 锁定期踩刹车不倒车（位移<0.1m，P1-1）', brakeMoved < 0.1, `位移 ${brakeMoved.toFixed(2)}m`);
+    await evalJs(rpc, `__kart.driveKeys.press('brake', false); "ok"`);
+    await pump(30); // 倒计时进入最后 1s
     const cdText = (await evalJs(rpc, `document.getElementById('hud-center').textContent`)).trim();
     check('赛道: 倒计时大字显示', ['1', '2', '3'].includes(cdText), `显示="${cdText}"`);
     await pump(95); // 累计 ≈4.7s：越过 3-2-1-GO
@@ -435,6 +443,7 @@ async function main() {
     })`));
     check('比赛: GO 后玩家点火、AI 全部起步', raceState.engine === true && raceState.aiSpeeds.every((v) => v > 3),
       JSON.stringify(raceState));
+    check('比赛: __kart.driving 指向当前受控车（P2-2）', await evalJs(rpc, `__kart.driving === __kart.race.playerE.st`));
     check('比赛: HUD 位次 P1-P4 + LAP x/3', /^P[1-4]$/.test(raceState.hudPos) && raceState.hudLaps === '/3',
       `${raceState.hudPos} ${raceState.hudLaps}`);
     check('比赛: AI 都在赛道上（横向偏移 < 半宽+缓冲）', raceState.onTrack.every((v) => Math.abs(+v) < 11),

@@ -196,9 +196,10 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
         drawTach(sim.rpm);
         drawMap(st, others);
       }
-      // 逆行警告
+      // 逆行警告（P3-3：BOOST 横幅显示期间推迟写入/清除，不更新已处理标志——
+      // BOOST 自清后下一帧自动补上，两者不再互相抹除；flashBoost 的清理自校验保留）
       const wrong = st.wrongWayT > 1.2;
-      if (wrong !== wrongWayShown) {
+      if (wrong !== wrongWayShown && !elCenter.querySelector('.hud-boost')) {
         wrongWayShown = wrong;
         if (wrong) setCenter('<b class="hud-wrong">⚠ 逆行</b>');
         else setCenter(null);

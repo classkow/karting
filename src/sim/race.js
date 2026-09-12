@@ -26,13 +26,15 @@ export function gridPose(track, slot) {
 
 // 排名：完赛者优先按完赛用时升序，未完赛按累计里程 total 降序
 // （total 以起点线为原点、有符号累计——跨线连续，无 s 回绕歧义）。
-// entrants: [{ id, isPlayer, st(drivingState), finished, finishTime, finishOrder }]
+// total 相等（同排发车格的浮点残差/强制平手）按 gridSlot 升序破序——发车顺位即名次口径，
+// 否则稳定排序按数组序会把玩家（数组 0、slot 3）排到同排 AI 前，初帧显示 P3（P2-1）。
+// entrants: [{ id, isPlayer, gridSlot, st(drivingState), finished, finishTime, finishOrder }]
 export function rankEntrants(entrants) {
   return [...entrants].sort((a, b) => {
     if (a.finished && b.finished) return a.finishTime - b.finishTime;
     if (a.finished) return -1;
     if (b.finished) return 1;
-    return (b.st.total ?? 0) - (a.st.total ?? 0);
+    return (b.st.total ?? 0) - (a.st.total ?? 0) || (a.gridSlot ?? 0) - (b.gridSlot ?? 0);
   });
 }
 

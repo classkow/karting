@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTrackModel } from '../src/sim/track.js';
+import { resetLapTiming } from '../src/sim/driving.js';
 import {
   createRaceEntrants, gridPose, rankEntrants, finishEntrant,
   resolveKartCollisions, RACE_LAPS, GRID_ROW, GRID_COL, KART_RADIUS,
@@ -84,6 +85,26 @@ test('比赛：碰撞分离——重叠的车被推开且法向速度交换', ()
   // 迎面相对速度应显著衰减（冲量交换），且没有穿模到另一侧
   const rel = Math.abs(a.st.vz) + Math.abs(b.st.vz);
   assert.ok(rel < 8, `分离后车体速度和 ${rel.toFixed(1)}（迎面 10+10 应大幅衰减）`);
+});
+
+test('比赛：初帧排名——total 相等按 gridSlot 升序破序，玩家 P4（P2-1，变红抽查锚点）', () => {
+  const entrants = createRaceEntrants('elite', track, null);
+  for (const e of entrants) resetLapTiming(e.st, 0, track);
+  // 真实发车格的 total 有 mm 级浮点差（横向偏移改变最近点投影），显示上同为 −8.4m——
+  // 排名不能依赖浮点运气，必须按 gridSlot 破序。这里强制同排 total 精确相等。
+  const bySlot = (s) => entrants.find((e) => e.gridSlot === s);
+  bySlot(0).st.total = -4.2;
+  bySlot(1).st.total = -4.2;
+  bySlot(2).st.total = -8.4;
+  const player = entrants.find((e) => e.isPlayer);
+  player.st.total = -8.4;
+  let ranked = rankEntrants(entrants);
+  assert.equal(ranked.indexOf(player), 3, `初帧玩家应 P4，实际 P${ranked.indexOf(player) + 1}`);
+  // 构造"数组序在前但 slot 更大"的精确平手：玩家（数组0/slot3）vs ai-0（数组1/slot0）
+  player.st.total = entrants[1].st.total = -8.4;
+  ranked = rankEntrants(entrants);
+  assert.ok(ranked.indexOf(entrants[1]) < ranked.indexOf(player),
+    'total 相等时 slot 小者应在前（ai-0 slot0 应排在玩家 slot3 前）');
 });
 
 test('比赛：gridPose 网格横向偏移方向交替', () => {
