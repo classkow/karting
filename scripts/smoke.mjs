@@ -354,8 +354,12 @@ async function main() {
     check('赛道: 选练习后菜单关闭', await evalJs(rpc, `document.getElementById('track-menu').classList.contains('hidden')`));
     // P1-1 倒计时锁定期刹车不得倒车（变红抽查锚点）
     await evalJs(rpc, `__kart.driveKeys.press('brake', true); "ok"`);
+    // 桌面零回归守护：键盘刹车通道保持"一按即全开"（触屏渐进只属于触屏输入源）
+    await pump(2);
+    const kbBrakeT = await evalJs(rpc, `__kart.sim.brakeTarget`);
+    check('桌面零回归: 键盘刹车按下即全开（brakeTarget=1，触屏渐进不外溢）', kbBrakeT === 1, `brakeTarget=${kbBrakeT}`);
     const brakeP0 = JSON.parse(await evalJs(rpc, `JSON.stringify({ x: __kart.driving.x, z: __kart.driving.z })`));
-    await pump(60); // 2s：倒计时仍在中段
+    await pump(58); // 2s：倒计时仍在中段
     const brakeP1 = JSON.parse(await evalJs(rpc, `JSON.stringify({ x: __kart.driving.x, z: __kart.driving.z })`));
     const brakeMoved = Math.hypot(brakeP1.x - brakeP0.x, brakeP1.z - brakeP0.z);
     check('倒计时: 锁定期踩刹车不倒车（位移<0.1m，P1-1）', brakeMoved < 0.1, `位移 ${brakeMoved.toFixed(2)}m`);
@@ -490,6 +494,7 @@ async function main() {
         hudBr: rect('.hud-br'),
         hint: rect('.hud-hint'),
         hintHidden: getComputedStyle(document.querySelector('.hud-hint')).display === 'none',
+        hudMap: rect('#hud-map'),
         htLeft: [...document.querySelectorAll('.ht-left .ht-btn')].map((b) => b.getBoundingClientRect().toJSON()),
         htRight: [...document.querySelectorAll('.ht-right .ht-btn')].map((b) => b.getBoundingClientRect().toJSON()),
         auto: rect('#hud-auto'),
@@ -535,10 +540,11 @@ async function main() {
         g.hudTop && g.topbar && g.hudTop.top >= g.topbar.bottom - 1, `hudTop.top=${g.hudTop.top.toFixed(1)} topbar.bottom=${g.topbar.bottom.toFixed(1)}`);
       check('手机: 触屏◀▶已渲染且不遮挡速度面板',
         g.htLeft.length === 2 && g.htLeft.every((b) => !overlapRect(b, g.hudBl)), JSON.stringify({ bl: g.hudBl, htLeft: g.htLeft }));
-      check('手机: 漂移/刹车已渲染且不遮挡小地图',
-        g.htRight.length === 2 && g.htRight.every((b) => !overlapRect(b, g.hudBr)), JSON.stringify({ br: g.hudBr, htRight: g.htRight }));
-      check('手机: 操作提示不溢出视口（触屏隐藏键盘提示）', g.hintHidden || (g.hint.left >= 0 && g.hint.right <= g.vw),
-        g.hintHidden ? 'hidden' : `left=${g.hint.left.toFixed(1)} right=${g.hint.right.toFixed(1)}`);
+      check('手机: 油门/刹车/漂移已渲染且不遮挡小地图',
+        g.htRight.length === 3 && g.htRight.every((b) => !overlapRect(b, g.hudBr)), JSON.stringify({ br: g.hudBr, htRight: g.htRight }));
+      check('手机: 操作提示不溢出视口且不压速度面板/小地图画布（触屏显示触屏提示）',
+        (g.hintHidden || (g.hint.left >= 0 && g.hint.right <= g.vw && !overlapRect(g.hint, g.hudBl) && !overlapRect(g.hint, g.hudMap))),
+        g.hintHidden ? 'hidden' : `hint=[${g.hint.left.toFixed(0)},${g.hint.top.toFixed(0)},${g.hint.right.toFixed(0)},${g.hint.bottom.toFixed(0)}]`);
       check('手机: 自动油门开关不与顶栏重叠', !overlapRect(g.auto, g.topbar), JSON.stringify({ auto: g.auto, topbar: g.topbar }));
       // N1/N2 真机 GPU 合成盲区防御：毛玻璃(backdrop-filter)在部分移动 GPU 上会把全屏遮罩
       // 及其子树渲染成不可交互的模糊层（本次报障的最佳解释，仿真不可复现）——
@@ -566,6 +572,49 @@ async function main() {
       const steer2 = await evalJs(rpc, '__kart.sim.steer');
       check('手机: 松开触屏转向后自动回正（steer 归零）', Math.abs(steer2) < 0.02, `steer=${steer2.toFixed(3)}`);
       await evalJs(rpc, '__kart.sim.steer = 0; "ok"');
+    }
+    // M-G 油门踏板：按住加速、松开滑行（报障①"车一直加速"的修复证据）
+    // 自动油门默认关闭（手动双踏板为默认方案）；输入通道断言与倒计时锁定期解耦。
+    // dispatch 走守卫形式：按钮不存在（未修复基线）时记 null，断言红而不是脚本崩。
+    {
+      const autoOn = await evalJs(rpc, `document.getElementById('hud-auto')?.classList.contains('on')`);
+      check('手机: 自动油门默认关闭（手动双踏板为默认方案）', autoOn === false, `autoOn=${autoOn}`);
+      const pressBtn = (sel, id, type) =>
+        `(() => { const b = document.querySelector('${sel}'); if (b) b.dispatchEvent(new PointerEvent('${type}', { pointerId: ${id}, bubbles: true, pointerType: 'touch' })); return !!b; })()`;
+      await evalJs(rpc, pressBtn('.ht-btn[data-press="up"]', 11, 'pointerdown'));
+      await evalJs(rpc, '__kart.step(1 / 60, 60); "ok"'); // 1s 按住油门
+      const tOn = await evalJs(rpc, '__kart.sim.throttle');
+      await evalJs(rpc, pressBtn('.ht-btn[data-press="up"]', 11, 'pointerup'));
+      await evalJs(rpc, '__kart.step(1 / 60, 45); "ok"'); // 0.75s 松开滑行
+      const tOff = await evalJs(rpc, '__kart.sim.throttle');
+      check('手机: 按住油门 → 油门升到 ~100%', tOn > 0.9, `throttle=${tOn.toFixed(2)}`);
+      check('手机: 松开油门 → 自然滑行收油（throttle<0.2，修复"车一直加速"）', tOff < 0.2, `throttle=${tOff.toFixed(2)}`);
+    }
+    // M-H 触屏刹车渐进：点刹部分制动、按住到满、松开回弹（报障②"点刹车直接刹停"的修复证据）
+    {
+      const pressBtn = (sel, id, type) =>
+        `(() => { const b = document.querySelector('${sel}'); if (b) b.dispatchEvent(new PointerEvent('${type}', { pointerId: ${id}, bubbles: true, pointerType: 'touch' })); return !!b; })()`;
+      await evalJs(rpc, pressBtn('.ht-btn[data-press="brake"]', 12, 'pointerdown'));
+      await evalJs(rpc, '__kart.step(1 / 60, 6); "ok"'); // 0.1s 点刹
+      const bTap = await evalJs(rpc, '__kart.sim.brakeTarget');
+      await evalJs(rpc, '__kart.step(1 / 60, 30); "ok"'); // 累计 0.6s 按住 → 行程到底
+      const bFull = await evalJs(rpc, '__kart.sim.brakeTarget');
+      await evalJs(rpc, pressBtn('.ht-btn[data-press="brake"]', 12, 'pointerup'));
+      await evalJs(rpc, '__kart.step(1 / 60, 20); "ok"'); // 松开 0.33s 回弹
+      const bRel = await evalJs(rpc, '__kart.sim.brakeTarget');
+      check('手机: 点刹 0.1s → 部分制动（0.05<brakeTarget<0.9，不再一点就满）', bTap > 0.05 && bTap < 0.9, `brakeTarget=${bTap.toFixed(2)}`);
+      check('手机: 按住 0.6s → 行程到满（brakeTarget=1）', bFull === 1, `brakeTarget=${bFull}`);
+      check('手机: 松开 0.33s → 回弹放空（brakeTarget=0）', bRel === 0, `brakeTarget=${bRel}`);
+    }
+    // M-J 自动油门开关持久化（设置跨刷新保留）+ 油门键置灰反馈
+    {
+      await evalJs(rpc, `document.getElementById('hud-auto')?.click(); "ok"`);
+      const stored = await evalJs(rpc, `localStorage.getItem('kart.autoThrottle')`);
+      const gasInert = await evalJs(rpc, `document.querySelector('.ht-btn[data-press="up"]')?.classList.contains('inert')`);
+      check('手机: 自动油门开启即持久化且油门键置灰', stored === '1' && gasInert === true, `stored=${stored} inert=${gasInert}`);
+      await evalJs(rpc, `document.getElementById('hud-auto')?.click(); "ok"`); // 还原默认（关）
+      const storedOff = await evalJs(rpc, `localStorage.getItem('kart.autoThrottle')`);
+      check('手机: 自动油门关闭状态持久化', storedOff === '0', `stored=${storedOff}`);
     }
     // 手机比赛流程（守护：桌面段已覆盖核心，这里验证位次在 GO 后正确显示）
     await evalJs(rpc, '__kart.exitTrack(); "ok"');

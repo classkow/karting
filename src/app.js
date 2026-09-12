@@ -237,8 +237,9 @@ export function createApp() {
     storage,
     touch: isTouch,
     // onHold 必须经 options 传入：hud.js 的按钮处理器读的是解构参数，
-    // 返回对象上事后补属性（旧写法）永远接不上 → 触屏按钮全灭（手机适配 P0 根因之一）
-    onHold: (dir, on) => driveKeys.press(dir, on),
+    // 返回对象上事后补属性（旧写法）永远接不上 → 触屏按钮全灭（手机适配 P0 根因之一）。
+    // 第三参 src（'touch'）让 shortcuts 对触屏刹车走踏板行程、键盘保持瞬时全刹。
+    onHold: (dir, on, src) => driveKeys.press(dir, on, src),
     onCamCycle() {
       hud.setCam(driveCam.cycle());
     },

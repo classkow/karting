@@ -1488,6 +1488,7 @@ body.track-mode #demo-caption {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none; /* 长按不弹系统菜单（部分安卓 WebKit） */
 }
 .ht-btn.ht-sm {
   width: auto;
@@ -1495,6 +1496,15 @@ body.track-mode #demo-caption {
   border-radius: 999px;
   padding: 0 18px;
   font-size: 14px;
+}
+/* 油门/刹车踏板：大圆按钮（紧急可达性），字号收小适配两字标签 */
+.ht-btn.ht-pedal {
+  font-size: 16px;
+  letter-spacing: 0.15em;
+}
+/* 自动油门开启时油门踏板置灰：视觉上交代"无需按住" */
+.ht-btn.inert {
+  opacity: 0.45;
 }
 .ht-btn.active {
   background: var(--accent-dim);
@@ -1787,9 +1797,16 @@ body.track-mode #demo-caption {
   .ht-btn.ht-sm {
     height: 42px;
   }
-  /* 键盘提示在触屏上无意义且必然溢出，隐藏 */
+  /* 键盘提示在触屏上无意义且必然溢出，隐藏；触屏设备改显触屏操作提示。
+     左对齐 + 上移：右下让开小地图、下让开速度面板（390×844 与 375×667 实测均净空） */
   .hud-hint {
     display: none;
+  }
+  #track-hud.is-touch .hud-hint {
+    display: block;
+    left: 12px;
+    bottom: 116px;
+    transform: none;
   }
   /* 自动油门开关移到圈速面板下方（原位叠在顶栏按钮上） */
   #hud-auto {

@@ -34,7 +34,9 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
         <button id="hud-exit" class="ghost sm">返回展台 <kbd>Esc</kbd></button>
       </div>
     </div>
-    <div class="hud-hint" id="hud-hint">W 油门 · S 刹车/倒车 · A/D 转向 · Shift 漂移 · V 换视角 · R 回到起点</div>
+    <div class="hud-hint" id="hud-hint">${touch
+      ? '◀ ▶ 转向 · 油门/刹车/漂移在右侧'
+      : 'W 油门 · S 刹车/倒车 · A/D 转向 · Shift 漂移 · V 换视角 · R 回到起点'}</div>
     ${touch ? `
     <div class="hud-touch">
       <div class="ht-group ht-left">
@@ -43,9 +45,10 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
       </div>
       <div class="ht-group ht-right">
         <button class="ht-btn ht-sm" data-press="drift">漂移</button>
-        <button class="ht-btn ht-sm" data-press="brake">刹车</button>
+        <button class="ht-btn ht-pedal" data-press="brake">刹车</button>
+        <button class="ht-btn ht-pedal" data-press="up">油门</button>
       </div>
-      <button id="hud-auto" class="tg on"><span>自动油门</span></button>
+      <button id="hud-auto" class="tg"><span>自动油门</span></button>
     </div>` : ''}
   `;
 
@@ -67,15 +70,24 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
 
   $('#hud-cam').addEventListener('click', () => onCamCycle?.());
   $('#hud-exit').addEventListener('click', () => onExit?.());
+  // 触屏驾驶默认手动双踏板（油门按住加速、松开滑行——真实驾驶口径）；
+  // 自动油门降级为可选休闲模式，开关状态持久化（历史版每次刷新都重置为开）。
+  let autoThrottle = storage.get('kart.autoThrottle') === '1';
+  const gasBtn = container.querySelector('.ht-btn[data-press="up"]');
+  const syncAutoUI = () => {
+    autoBtn?.classList.toggle('on', autoThrottle);
+    gasBtn?.classList.toggle('inert', autoThrottle);
+    if (gasBtn) gasBtn.title = autoThrottle ? '自动油门开启中，无需按住' : '按住加速，松开滑行';
+  };
   const autoBtn = $('#hud-auto');
   if (autoBtn) {
     autoBtn.addEventListener('click', () => {
       autoThrottle = !autoThrottle;
-      autoBtn.classList.toggle('on', autoThrottle);
+      try { storage.set('kart.autoThrottle', autoThrottle ? '1' : '0'); } catch { /* 忽略 */ }
+      syncAutoUI();
     });
   }
-
-  let autoThrottle = true; // 触屏默认自动油门
+  syncAutoUI();
   let lastLapShown = -1;
   let lastBestShown = 0;
   let prevBoost = 0;
@@ -121,15 +133,22 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
   }
 
   // —— 触屏按钮：按下/抬起统一走回调（app 接到 driveKeys 的持续输入通道）——
+  // src='touch'：shortcuts 据此对刹车走踏板行程（键盘源保持瞬时全刹，桌面零回归）
   container.querySelectorAll('.ht-btn').forEach((btn) => {
     const dir = btn.dataset.press;
-    const down = (e) => { e.preventDefault(); onHold?.(dir, true); btn.classList.add('active'); };
-    const up = (e) => { e.preventDefault(); onHold?.(dir, false); btn.classList.remove('active'); };
+    const down = (e) => { e.preventDefault(); onHold?.(dir, true, 'touch'); btn.classList.add('active'); };
+    const up = (e) => { e.preventDefault(); onHold?.(dir, false, 'touch'); btn.classList.remove('active'); };
     btn.addEventListener('pointerdown', down);
     btn.addEventListener('pointerup', up);
     btn.addEventListener('pointerleave', up);
     btn.addEventListener('pointercancel', up);
+    btn.addEventListener('contextmenu', (e) => e.preventDefault()); // 长按不弹浏览器菜单
   });
+  // 切后台时 held 已被 shortcuts 的 blur 清掉，但按钮高亮态留在屏上会误导（幽灵按键）
+  window.addEventListener('blur', () => {
+    container.querySelectorAll('.ht-btn.active').forEach((b) => b.classList.remove('active'));
+  });
+  container.classList.toggle('is-touch', touch);
 
   const setCenter = (html) => {
     if (html === null) { elCenter.innerHTML = ''; elCenter.classList.remove('show'); return; }
