@@ -460,6 +460,111 @@ async function main() {
     await pump(10);
     check('比赛: 退出后比赛清理干净', await evalJs(rpc, `__kart.race === null && document.getElementById('track-menu').classList.contains('hidden')`));
 
+        // 9. 手机视口组（390×844 + touch 仿真，任务包 §1.2 验收口径）
+    // 触屏仿真必须在应用创建【前】启用（isTouch 在启动时采样），故本组自带头加载。
+    // 先红后绿：M-A~M-F 在未修复基线上为红（见交付说明红绿记录）。
+    await rpc('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await rpc('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await rpc('Page.navigate', { url: PAGE_URL });
+    await waitFor(() => evalJs(rpc, '!!window.__kart'), '手机视口应用启动');
+    await pump(5);
+    const overlapRect = (a, b) => a && b && !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+    const mgeo = () => evalJs(rpc, `(() => {
+      const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect().toJSON() ?? null;
+      return JSON.stringify({
+        vw: innerWidth, vh: innerHeight,
+        topbar: rect('#topbar'),
+        btnTrack: rect('#btn-track'),
+        hudTop: rect('.hud-top'),
+        hudBl: rect('.hud-bl'),
+        hudBr: rect('.hud-br'),
+        hint: rect('.hud-hint'),
+        hintHidden: getComputedStyle(document.querySelector('.hud-hint')).display === 'none',
+        htLeft: [...document.querySelectorAll('.ht-left .ht-btn')].map((b) => b.getBoundingClientRect().toJSON()),
+        htRight: [...document.querySelectorAll('.ht-right .ht-btn')].map((b) => b.getBoundingClientRect().toJSON()),
+        auto: rect('#hud-auto'),
+        menuVisible: !document.getElementById('track-menu').classList.contains('hidden'),
+      });
+    })()`).then(JSON.parse);
+
+    // M-0 入口可见可点（守护：基线即绿，不计入先红清单）
+    {
+      const g = await mgeo();
+      check('手机: 顶栏上赛道入口在视口内且有可点尺寸',
+        g.btnTrack && g.btnTrack.left >= 0 && g.btnTrack.right <= g.vw && g.btnTrack.width > 32 && g.btnTrack.height > 24,
+        JSON.stringify(g.btnTrack));
+    }
+    // 进赛道 → 菜单（守护：基线即绿）
+    await evalJs(rpc, '__kart.enterTrack(); "ok"');
+    await pump(5);
+    {
+      const g = await mgeo();
+      const card = JSON.parse(await evalJs(rpc, `JSON.stringify((() => {
+        const card = document.querySelector('.tm-card');
+        const r = card.getBoundingClientRect();
+        const buttons = [...card.querySelectorAll('.tm-item')].map((b) => b.getBoundingClientRect().toJSON());
+        return { r, buttons, inViewport: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
+      })())`));
+      check('手机: 模式菜单完整显示、五个按钮均在视口内有可点尺寸',
+        g.menuVisible && card.inViewport && card.buttons.every((b) => b.width > 100 && b.height > 32 && b.left >= 0 && b.right <= g.vw),
+        `card=${JSON.stringify(card.r)}`);
+    }
+    // 选练习 → 倒计时中采集 HUD 几何（M-A~M-E，先红组）
+    await evalJs(rpc, `document.querySelector('#track-menu [data-mode="practice"]').click(); "ok"`);
+    await pump(10);
+    {
+      const g = await mgeo();
+      check('手机: 顶栏不被圈速面板覆盖（hud-top 在顶栏下方）',
+        g.hudTop && g.topbar && g.hudTop.top >= g.topbar.bottom - 1, `hudTop.top=${g.hudTop.top.toFixed(1)} topbar.bottom=${g.topbar.bottom.toFixed(1)}`);
+      check('手机: 触屏◀▶已渲染且不遮挡速度面板',
+        g.htLeft.length === 2 && g.htLeft.every((b) => !overlapRect(b, g.hudBl)), JSON.stringify({ bl: g.hudBl, htLeft: g.htLeft }));
+      check('手机: 漂移/刹车已渲染且不遮挡小地图',
+        g.htRight.length === 2 && g.htRight.every((b) => !overlapRect(b, g.hudBr)), JSON.stringify({ br: g.hudBr, htRight: g.htRight }));
+      check('手机: 操作提示不溢出视口（触屏隐藏键盘提示）', g.hintHidden || (g.hint.left >= 0 && g.hint.right <= g.vw),
+        g.hintHidden ? 'hidden' : `left=${g.hint.left.toFixed(1)} right=${g.hint.right.toFixed(1)}`);
+      check('手机: 自动油门开关不与顶栏重叠', !overlapRect(g.auto, g.topbar), JSON.stringify({ auto: g.auto, topbar: g.topbar }));
+    }
+    // M-F 触屏◀真实按压 → 转向输入进入 sim（先红：接线断时恒 0）
+    {
+      const steer0 = await evalJs(rpc, '__kart.sim.steer');
+      await evalJs(rpc, `document.querySelector('.ht-btn[data-press="left"]').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 9, bubbles: true, pointerType: 'touch' })); "ok"`);
+      await evalJs(rpc, '__kart.step(1 / 60, 40); "ok"'); // 泵 0.67s 模拟时间（不依赖 rAF 帧率）
+      const steer1 = await evalJs(rpc, '__kart.sim.steer');
+      check('手机: 触屏◀按压产生真实转向输入（steer < -0.05）', steer1 < -0.05, `steer ${steer0} → ${steer1.toFixed(3)}`);
+      await evalJs(rpc, `document.querySelector('.ht-btn[data-press="left"]').dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, bubbles: true, pointerType: 'touch' })); "ok"`);
+      await evalJs(rpc, '__kart.step(1 / 60, 60); "ok"');
+      const steer2 = await evalJs(rpc, '__kart.sim.steer');
+      check('手机: 松开触屏转向后自动回正（steer 归零）', Math.abs(steer2) < 0.02, `steer=${steer2.toFixed(3)}`);
+      await evalJs(rpc, '__kart.sim.steer = 0; "ok"');
+    }
+    // 手机比赛流程（守护：桌面段已覆盖核心，这里验证位次在 GO 后正确显示）
+    await evalJs(rpc, '__kart.exitTrack(); "ok"');
+    await pump(5);
+    await evalJs(rpc, '__kart.enterTrack(); "ok"');
+    await pump(5);
+    await evalJs(rpc, `document.querySelector('#track-menu [data-tier="rookie"]').click(); "ok"`);
+    await pump(180); // 6s：倒计时走完、AI 起步
+    {
+      const rs = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        pos: document.getElementById('hud-pos').textContent,
+        laps: document.getElementById('hud-laps').textContent,
+        aiOnTrack: __kart.race.racers.every((r) => isFinite(r.e.st.x)),
+      })`));
+      check('手机: 比赛 GO 后位次 P1-P4 与 LAP x/3 正常显示', /^P[1-4]$/.test(rs.pos) && rs.laps === '/3' && rs.aiOnTrack,
+        JSON.stringify(rs));
+    }
+    // 返回展台：小屏展台体验与进赛道前一致（守护）
+    await evalJs(rpc, '__kart.exitTrack(); "ok"');
+    await pump(10);
+    {
+      const g = await mgeo();
+      check('手机: 返回展台后顶栏入口仍可见可点', g.btnTrack && g.btnTrack.left >= 0 && g.btnTrack.right <= g.vw && g.btnTrack.width > 32,
+        JSON.stringify(g.btnTrack));
+    }
+    await rpc('Emulation.clearDeviceMetricsOverride');
+    await rpc('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await pump(5);
+
     check('控制台零报错', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
     close();
   } finally {
@@ -474,5 +579,6 @@ async function main() {
 
 main().catch((e) => {
   console.error('冒烟失败:', e.message);
+  if (e.stack) console.error(e.stack.split(String.fromCharCode(10)).slice(0, 6).join(String.fromCharCode(10)));
   process.exit(1);
 });

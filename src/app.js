@@ -236,12 +236,14 @@ export function createApp() {
     track,
     storage,
     touch: isTouch,
+    // onHold 必须经 options 传入：hud.js 的按钮处理器读的是解构参数，
+    // 返回对象上事后补属性（旧写法）永远接不上 → 触屏按钮全灭（手机适配 P0 根因之一）
+    onHold: (dir, on) => driveKeys.press(dir, on),
     onCamCycle() {
       hud.setCam(driveCam.cycle());
     },
     onExit: () => exitTrack(),
   });
-  hud.onHold = (dir, on) => driveKeys.press(dir, on);
 
   // ————— 赛道模式菜单（练习 / 比赛·三档）—————
   const menu = initTrackMenu(document.getElementById('track-menu'), {
@@ -567,12 +569,16 @@ export function createApp() {
             lapTimeMs: e.st.bestLapMs,
           })), { tier: race.tier });
         }
-        const rankedNow = rankEntrants(race.entrants);
-        hud.setRaceInfo({
-          pos: rankedNow.indexOf(race.playerE) + 1,
-          total: race.entrants.length,
-          laps: RACE_LAPS,
-        });
+        // 位次只在 GO 后更新：倒计时里 total 全为网格基准的瞬态（静止蠕动 ±1cm），
+        // 显示出来是随机名次，误导（GO 时 resetLapTiming 会给出真实网格基准）
+        if (!countdown.active) {
+          const rankedNow = rankEntrants(race.entrants);
+          hud.setRaceInfo({
+            pos: rankedNow.indexOf(race.playerE) + 1,
+            total: race.entrants.length,
+            laps: RACE_LAPS,
+          });
+        }
       }
 
       updateDrivingAudio({

@@ -1700,3 +1700,95 @@ body.track-mode #demo-caption {
 #hud-laps.hidden {
   display: none;
 }
+
+/* ————— 手机 / 窄屏赛道 HUD（≤640px；与展台 880px 断点体系并行的第二档）—————
+   赛道 HUD 的桌面布局在 390px 竖屏下互相叠压（触屏按钮盖速度面板/小地图、
+   圈速面板盖顶栏、提示条溢出），本档整体重排：面板缩小、触屏按钮上移让位、
+   键盘提示隐藏。调查与取证见 docs/调查专题-手机端赛道模式适配-20260912.md。 */
+@media (max-width: 640px) {
+  /* 圈速面板下移到顶栏（高 75px）下方并收窄，不再盖入口/帮助按钮 */
+  .hud-top {
+    top: 84px;
+    padding: 6px 10px;
+    gap: 7px;
+    max-width: calc(100vw - 20px);
+  }
+  .hud-lap {
+    font-size: 10px;
+  }
+  .hud-lap b {
+    font-size: 14px;
+  }
+  .hud-pos {
+    font-size: 12px;
+    padding: 1px 6px;
+  }
+  .hud-cur {
+    font-size: 15px;
+    min-width: 62px;
+  }
+  .hud-sub {
+    font-size: 9.5px;
+    white-space: nowrap;
+  }
+  /* 中央大字缩小并下移避开顶栏 */
+  .hud-center {
+    top: 38%;
+  }
+  .hud-center b {
+    font-size: 64px;
+  }
+  .hud-boost {
+    font-size: 30px !important;
+  }
+  .hud-wrong {
+    font-size: 26px !important;
+  }
+  /* 左下速度面板收窄 */
+  .hud-bl {
+    left: 10px;
+    bottom: 10px;
+    padding: 7px 10px;
+  }
+  .hud-speed b {
+    font-size: 24px;
+  }
+  #hud-tach {
+    width: 112px;
+    height: 34px;
+  }
+  /* 右下小地图收窄 */
+  .hud-br {
+    right: 10px;
+    bottom: 10px;
+  }
+  #hud-map {
+    width: 104px;
+    height: 104px;
+  }
+  /* 触屏按钮上移到两面板上方，让出底部空间 */
+  .ht-left {
+    left: 12px;
+    bottom: 156px;
+  }
+  .ht-right {
+    right: 12px;
+    bottom: 178px;
+  }
+  .ht-btn {
+    width: 62px;
+    height: 62px;
+  }
+  .ht-btn.ht-sm {
+    height: 42px;
+  }
+  /* 键盘提示在触屏上无意义且必然溢出，隐藏 */
+  .hud-hint {
+    display: none;
+  }
+  /* 自动油门开关移到圈速面板下方（原位叠在顶栏按钮上） */
+  #hud-auto {
+    top: 138px;
+    right: 10px;
+  }
+}
