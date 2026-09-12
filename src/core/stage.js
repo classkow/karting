@@ -104,11 +104,42 @@ export function createStage(canvas) {
   rimGlow.position.y = 0.0195;
   scene.add(rimGlow);
 
+  // ————— 世界模式：showroom（展台）/ track（赛道）—————
+  // 展台物件收进一组整体显隐；雾密度/雾色/远裁剪面/阴影相机范围按模式切换。
+  const showroom = new THREE.Group();
+  showroom.add(backdropSphere, floor, platform, rimGlow);
+  scene.add(showroom);
+
+  // 主光阴影相机默认按展台 ±2.6m 收紧；赛道模式放宽并让光跟随车辆（followKey）
+  scene.add(key.target);
+  function followKey(pos) {
+    key.position.set(pos.x + 3.4, pos.y + 5.4, pos.z + 2.6);
+    key.target.position.copy(pos);
+    key.target.updateMatrixWorld();
+  }
+  function setShadowExtent(ext) {
+    key.shadow.camera.left = -ext;
+    key.shadow.camera.right = ext;
+    key.shadow.camera.top = ext;
+    key.shadow.camera.bottom = -ext;
+    key.shadow.camera.updateProjectionMatrix();
+  }
+
+  function setWorld(mode) {
+    const trackMode = mode === 'track';
+    showroom.visible = !trackMode;
+    scene.fog.density = trackMode ? 0.0042 : 0.044;
+    scene.fog.color.set(trackMode ? 0x9fb0bf : 0x0a0e15);
+    camera.far = trackMode ? 500 : 80;
+    camera.updateProjectionMatrix();
+    setShadowExtent(trackMode ? 10 : 2.6);
+  }
+
   function setSize(w, h) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
   }
 
-  return { renderer, scene, camera, controls, setSize, key };
+  return { renderer, scene, camera, controls, setSize, key, setWorld, followKey };
 }

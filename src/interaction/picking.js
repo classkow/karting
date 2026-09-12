@@ -9,6 +9,7 @@ export function initPicking({ canvas, camera, kartRoot, registry, hoverPass, sel
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let hovered = null;
+  let enabled = true; // 赛道驾驶模式下整体让位（app 切换）
 
   function select(id) {
     selectPass.selectedObjects = id ? [registry.getPart(id).group] : [];
@@ -48,9 +49,9 @@ export function initPicking({ canvas, camera, kartRoot, registry, hoverPass, sel
 
   function setHover(id, x, y) {
     hovered = id;
-    hoverPass.selectedObjects = id ? [registry.getPart(id).group] : [];
-    canvas.style.cursor = id ? 'pointer' : 'grab';
-    onHover?.(id, x, y);
+    hoverPass.selectedObjects = id && enabled ? [registry.getPart(id).group] : [];
+    canvas.style.cursor = id && enabled ? 'pointer' : 'grab';
+    onHover?.(enabled ? id : null, x, y);
   }
 
   // rAF 节流：pointermove 一帧内可能触发多次，只保留最新坐标，每帧求交一次
@@ -84,12 +85,17 @@ export function initPicking({ canvas, camera, kartRoot, registry, hoverPass, sel
   let downPos = null;
   canvas.addEventListener('pointerdown', (e) => (downPos = [e.clientX, e.clientY]));
   canvas.addEventListener('pointerup', (e) => {
+    if (!enabled) return;
     if (!downPos || Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) > 5) return;
     select(pick(e.clientX, e.clientY));
   });
 
   return {
     select, // 供部件清单调用
+    set enabled(v) {
+      enabled = v;
+      if (!v && hovered) setHover(null);
+    },
     setHoverExternal(id) {
       // 清单行悬停时高亮 3D 部件（不显示光标标签）；离开后恢复画布内的悬停高亮
       const pid = (id && partVisible(id) ? id : null) ?? hovered;

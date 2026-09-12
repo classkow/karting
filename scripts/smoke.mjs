@@ -345,6 +345,112 @@ async function main() {
     await shot('03-explode.png', [2.4, 1.6, 2.4], [0, 0.5, 0]);
     await evalJs(rpc, '__kart.explode.setTarget(0); "ok"');
 
+    // 7. 赛道·练习模式（菜单 → 单车练习 → 倒计时 → 驾驶全链路）
+    await evalJs(rpc, '__kart.enterTrack(); "ok"');
+    check('赛道: enterTrack 进入驾驶模式', (await evalJs(rpc, `__kart.mode`)) === 'track');
+    check('赛道: 模式菜单可见', await evalJs(rpc, `!document.getElementById('track-menu').classList.contains('hidden')`));
+    check('赛道: HUD 容器可见', await evalJs(rpc, `!document.getElementById('track-hud').classList.contains('hidden')`));
+    await evalJs(rpc, `document.querySelector('#track-menu [data-mode="practice"]').click(); "ok"`);
+    check('赛道: 选练习后菜单关闭', await evalJs(rpc, `document.getElementById('track-menu').classList.contains('hidden')`));
+    await pump(45); // 1.5s：倒计时进行中
+    const cdText = (await evalJs(rpc, `document.getElementById('hud-center').textContent`)).trim();
+    check('赛道: 倒计时大字显示', ['1', '2', '3'].includes(cdText), `显示="${cdText}"`);
+    await pump(95); // 累计 ≈4.7s：越过 3-2-1-GO
+    const goState = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      engine: __kart.sim.engineOn, active: __kart.sim.drivingActive,
+    })`));
+    check('赛道: GO 后自动点火且动力学激活', goState.engine === true && goState.active === true,
+      JSON.stringify(goState));
+
+    // 全油门直线（走真实输入通道按住 W）：真实车速上升、位置前进、车轮按地面速度滚
+    await evalJs(rpc, `__kart.driveKeys.press('up', true); "ok"`);
+    const d0 = JSON.parse(await evalJs(rpc, `JSON.stringify({ x: __kart.driving.x, z: __kart.driving.z, v: __kart.driving.speed, w: __kart.sim.wheelOmega })`));
+    await pump(120); // 4s 全油门
+    const d1 = JSON.parse(await evalJs(rpc, `JSON.stringify({ x: __kart.driving.x, z: __kart.driving.z, v: __kart.driving.speed, w: __kart.sim.wheelOmega, kmh: __kart.sim.speedKmh })`));
+    const moved = Math.hypot(d1.x - d0.x, d1.z - d0.z);
+    // 起步打滑期（离合滑差 0.85 扭矩 + 后轴附着上限）：4s ≈ 45km/h、位移 ≈23m（½at² 自洽）
+    check('赛道: 全油门 4s 前进 >20m 且车速 >35km/h', moved > 20 && d1.kmh > 35,
+      `moved=${moved.toFixed(1)}m kmh=${d1.kmh.toFixed(1)}`);
+    check('赛道: 车轮角速度 = 地面速度/轮径（真实滚动口径）',
+      Math.abs(d1.w - Math.min(d1.v / 0.145, 130)) < 1e-6, `ω=${d1.w.toFixed(1)} v=${d1.v.toFixed(1)}`);
+    const hudSpeed = await evalJs(rpc, `+document.getElementById('hud-speed').textContent`);
+    // HUD 速度 10Hz 节流，加速中允许 ≤2.5km/h 的显示滞后
+    check('赛道: HUD km/h 与动力学一致（10Hz 节流容差）', Math.abs(hudSpeed - d1.kmh) < 2.5, `hud=${hudSpeed} real=${d1.kmh.toFixed(1)}`);
+
+    // 赛道截图（此时仍在起跑直道上，追逐相机跟车：路面/路肩/轮胎墙/树全入画）
+    {
+      await pump(2);
+      const shotTr = await rpc('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(join(OUT_DIR, '05-track.png'), Buffer.from(shotTr.data, 'base64'));
+      console.log('  截图 .tmp/smoke/05-track.png');
+    }
+
+    // 座舱视角（V 键同路径：点 HUD 相机按钮两次 → 座舱）
+    await evalJs(rpc, `document.getElementById('hud-cam').click(); document.getElementById('hud-cam').click(); "ok"`);
+    await pump(4);
+    {
+      const shotCk = await rpc('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(join(OUT_DIR, '06-cockpit.png'), Buffer.from(shotCk.data, 'base64'));
+      console.log('  截图 .tmp/smoke/06-cockpit.png');
+    }
+    await evalJs(rpc, `document.getElementById('hud-cam').click(); "ok"`); // 回追逐·远
+
+    // 方向回归（用户报告的左右反向 BUG）：走真实按键通道，按【左】必须 yaw 增大（屏幕左转）
+    const yaw0 = await evalJs(rpc, `__kart.driving.yaw`);
+    await evalJs(rpc, `__kart.driveKeys.press('left', true); "ok"`);
+    await pump(60); // 2s 带舵
+    const yaw1 = await evalJs(rpc, `__kart.driving.yaw`);
+    check('赛道: 按【左】yaw 增大（屏幕左转，方向回归）', yaw1 > yaw0 + 0.02, `yaw ${yaw0.toFixed(3)} → ${yaw1.toFixed(3)}`);
+    await evalJs(rpc, `__kart.driveKeys.press('left', false); "ok"`);
+    await evalJs(rpc, '__kart.sim.steer = 0; "ok"');
+    await evalJs(rpc, `__kart.driveKeys.press('up', false); "ok"`);
+
+    // 退出练习：展台完整还原
+    await evalJs(rpc, '__kart.exitTrack(); "ok"');
+    await pump(30);
+    const backState = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      mode: __kart.mode, y: __kart.getPart('rear-axle').group.position.y,
+      hud: document.getElementById('track-hud').classList.contains('hidden'),
+      throttle: __kart.sim.throttle, active: __kart.sim.drivingActive,
+    })`));
+    check('赛道: 退出后回展台（车回展台位、HUD 收起、驾驶态清零）',
+      backState.mode === 'showroom' && Math.abs(backState.y - 0.145) < 1e-6 && backState.hud
+        && backState.throttle === 0 && backState.active === false,
+      JSON.stringify(backState));
+
+    // 8. 赛道·比赛模式（菜单 → 新锐组 → AI 同场竞技）
+    await evalJs(rpc, '__kart.enterTrack(); "ok"');
+    await evalJs(rpc, `document.querySelector('#track-menu [data-tier="rookie"]').click(); "ok"`);
+    check('比赛: 菜单关闭并创建比赛', await evalJs(rpc, `document.getElementById('track-menu').classList.contains('hidden') && !!__kart.race`));
+    check('比赛: 3 名 AI 已上发车格', await evalJs(rpc, `__kart.race.racers.length === 3 && __kart.race.racers.every((r) => isFinite(r.e.st.x))`));
+    await pump(140); // ≈4.7s 越过倒计时（AI 反应延迟最慢 0.45s 也已起步）
+    await pump(150); // 再 5s：AI 加速到可观测速度（起步打滑期物理口径见 tests/driving.test.js）
+    const raceState = JSON.parse(await evalJs(rpc, `JSON.stringify({
+      engine: __kart.sim.engineOn,
+      aiSpeeds: __kart.race.racers.map((r) => +r.e.st.speed.toFixed(1)),
+      hudPos: document.getElementById('hud-pos').textContent,
+      hudLaps: document.getElementById('hud-laps').textContent,
+      onTrack: __kart.race.racers.map((r) => Math.abs(__kart.track.nearest(r.e.st.x, r.e.st.z, r.e.st.hintIdx).lat).toFixed(1)),
+      visuals: __kart.race.racers.every((r) => !!r.e.visual && r.e.visual.parent !== null),
+    })`));
+    check('比赛: GO 后玩家点火、AI 全部起步', raceState.engine === true && raceState.aiSpeeds.every((v) => v > 3),
+      JSON.stringify(raceState));
+    check('比赛: HUD 位次 P1-P4 + LAP x/3', /^P[1-4]$/.test(raceState.hudPos) && raceState.hudLaps === '/3',
+      `${raceState.hudPos} ${raceState.hudLaps}`);
+    check('比赛: AI 都在赛道上（横向偏移 < 半宽+缓冲）', raceState.onTrack.every((v) => Math.abs(+v) < 11),
+      raceState.onTrack.join(','));
+    check('比赛: AI 车体克隆已入场景', raceState.visuals === true);
+    {
+      await pump(2);
+      const shotRace = await rpc('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(join(OUT_DIR, '07-race.png'), Buffer.from(shotRace.data, 'base64'));
+      console.log('  截图 .tmp/smoke/07-race.png');
+    }
+    // 弃赛回菜单（Esc 语义）→ 再退出
+    await evalJs(rpc, '__kart.exitTrack(); "ok"');
+    await pump(10);
+    check('比赛: 退出后比赛清理干净', await evalJs(rpc, `__kart.race === null && document.getElementById('track-menu').classList.contains('hidden')`));
+
     check('控制台零报错', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
     close();
   } finally {

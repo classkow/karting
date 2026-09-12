@@ -220,3 +220,123 @@ export function numberPlate(num = '88') {
   ctx.fillText(num, S / 2, S * 0.54);
   return toTexture(c, { srgb: true });
 }
+
+// ————— 赛道世界贴图（trackScene 用，同「运行时生成、零外部资源」口径）—————
+
+// 沥青路面：深灰基底 + 骨料噪点 + 车辙暗带 + 两侧白边线（u 横向 = 路宽方向）
+let _asphalt = null;
+export function asphaltMap() {
+  if (_asphalt) return _asphalt;
+  const S = 512;
+  const [c, ctx] = makeCanvas(S);
+  ctx.fillStyle = '#33363b';
+  ctx.fillRect(0, 0, S, S);
+  // 骨料噪点
+  for (let i = 0; i < 9000; i++) {
+    const a = 0.05 + Math.random() * 0.1;
+    ctx.fillStyle = Math.random() > 0.5 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+    ctx.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 2, 1 + Math.random() * 2);
+  }
+  // 行车道中段的轮胎磨亮暗带（u 中部两条柔和暗带）
+  for (const u of [0.36, 0.64]) {
+    const g = ctx.createLinearGradient((u - 0.09) * S, 0, (u + 0.09) * S, 0);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.5, 'rgba(0,0,0,0.16)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect((u - 0.09) * S, 0, 0.18 * S, S);
+  }
+  // 两侧白边线
+  ctx.fillStyle = 'rgba(232,236,240,0.85)';
+  ctx.fillRect(0.028 * S, 0, 3, S);
+  ctx.fillRect(0.965 * S, 0, 3, S);
+  _asphalt = toTexture(c, { srgb: true, repeat: [1, 1] });
+  return _asphalt;
+}
+
+// 草地：黄绿基底 + 深浅斑块噪声
+let _grass = null;
+export function grassMap() {
+  if (_grass) return _grass;
+  const S = 256;
+  const [c, ctx] = makeCanvas(S);
+  ctx.fillStyle = '#46582f';
+  ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 5200; i++) {
+    const a = 0.06 + Math.random() * 0.14;
+    ctx.fillStyle = Math.random() > 0.5 ? `rgba(120,148,80,${a})` : `rgba(30,40,18,${a})`;
+    ctx.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 3, 1 + Math.random() * 3);
+  }
+  _grass = toTexture(c, { srgb: true });
+  return _grass;
+}
+
+// 路肩：红白条纹（v 沿赛道方向重复 → 条纹垂直行进方向）
+let _kerb = null;
+export function kerbMap() {
+  if (_kerb) return _kerb;
+  const S = 128;
+  const [c, ctx] = makeCanvas(S);
+  ctx.fillStyle = '#c8362e';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = '#e8ecef';
+  ctx.fillRect(0, 0, S, S / 2);
+  // 轻微磨旧
+  for (let i = 0; i < 700; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.1})`;
+    ctx.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+  _kerb = toTexture(c, { srgb: true, repeat: [1, 1] });
+  return _kerb;
+}
+
+// 起点线：黑白格子
+let _checker = null;
+export function checkerMap() {
+  if (_checker) return _checker;
+  const S = 128;
+  const [c, ctx] = makeCanvas(S);
+  const n = 8;
+  const cell = S / n;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      ctx.fillStyle = (x + y) % 2 ? '#e8ecef' : '#14171b';
+      ctx.fillRect(x * cell, y * cell, cell, cell);
+    }
+  }
+  _checker = toTexture(c, { srgb: true, repeat: [1, 1] });
+  return _checker;
+}
+
+// 白天天光：顶部深蓝 → 地平线暖白（天空球 BackSide 用，fog:false）
+let _sky = null;
+export function skyMap() {
+  if (_sky) return _sky;
+  const [c, ctx] = makeCanvas(512, 512);
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, '#2e5a8f');
+  g.addColorStop(0.45, '#7fa8cd');
+  g.addColorStop(0.72, '#cfd9d4');
+  g.addColorStop(0.86, '#e8e2cf');
+  g.addColorStop(1, '#b7b3a2');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 512, 512);
+  _sky = toTexture(c, { srgb: true });
+  return _sky;
+}
+
+// 龙门架横幅文字贴图
+export function bannerMap(text = 'KART GP · 卡丁车大奖赛') {
+  const [c, ctx] = makeCanvas(1024, 128);
+  ctx.fillStyle = '#14171b';
+  ctx.fillRect(0, 0, 1024, 128);
+  ctx.fillStyle = '#ffb547';
+  ctx.fillRect(0, 0, 1024, 8);
+  ctx.fillRect(0, 120, 1024, 8);
+  ctx.fillStyle = '#e8edf4';
+  ctx.font = "900 56px 'Microsoft YaHei', Arial, sans-serif";
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 512, 66);
+  return toTexture(c, { srgb: true });
+}

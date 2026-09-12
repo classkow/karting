@@ -552,11 +552,26 @@ export function initHelp(overlay) {
     ['1 – 9', '切换视角预设'],
     ['Esc', '关闭信息卡 / 弹窗'],
   ];
+  const TRACK_KEYS = [
+    ['W / ↑', '油门（可长按）'],
+    ['S / ↓ / B', '刹车 · 停稳后按住倒车'],
+    ['A / D / ← →', '转向（松手自动回正）'],
+    ['Shift', '漂移（按住甩尾，松开出弯 BOOST）'],
+    ['V', '切换视角：追逐远 / 近 / 座舱'],
+    ['R', '练习：回起点 · 比赛：原地救车'],
+    ['空格', '点火 / 熄火'],
+    ['Esc', '弃赛回菜单 · 菜单中退出赛道'],
+  ];
   const TOUCHES = [
     ['单指拖拽', '旋转视角'],
     ['双指捏合', '缩放'],
     ['双指拖拽', '平移'],
     ['点按部件', '查看原理讲解'],
+  ];
+  const TRACK_TOUCHES = [
+    ['◀ ▶', '转向'],
+    ['刹车 / 漂移', '右下角按钮'],
+    ['自动油门', '默认开启，右上角可关'],
   ];
   overlay.innerHTML = `
     <div class="help-card">
@@ -564,11 +579,22 @@ export function initHelp(overlay) {
       <div class="help-grid help-kb">
         ${SHORTCUTS.map(([k, v]) => `<div class="hk"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}
       </div>
+      <div class="help-tips">
+        <p><b>🏁 赛道模式：</b>点顶栏「上赛道」出模式菜单——单车练习，或与 3 名电脑对手跑 3 圈比赛（新锐 / 精英 / 王者三档，实力差来自真实圈速）；</p>
+        <p>离心离合器 4000 转才接合，倒计时后地板油起步，听转速从喘振里爬起来；重刹留着直线完成（只有后轴单碟刹）；高速猛打方向会推头甚至甩尾，按住 Shift 漂移反而是解法；</p>
+        <p>冲出路面草地又颠又慢；车与车有碰撞，可以卡位；圈速与位次见 HUD，最佳圈存进浏览器。</p>
+      </div>
+      <div class="help-sec">赛道键位</div>
+      <div class="help-grid help-kb">
+        ${TRACK_KEYS.map(([k, v]) => `<div class="hk"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}
+      </div>
+      ${TOUCHES.length ? `<div class="help-sec">触屏</div>
       <div class="help-grid help-touch">
         ${TOUCHES.map(([k, v]) => `<div class="hk"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}
-      </div>
+        ${TRACK_TOUCHES.map(([k, v]) => `<div class="hk"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}
+      </div>` : ''}
       <div class="help-tips">
-        <p><b>建议路线：</b>点击「启动发动机」拉高油门，观察透明气缸内的活塞与连杆；</p>
+        <p><b>展台建议路线：</b>点击「启动发动机」拉高油门，观察透明气缸内的活塞与连杆；</p>
         <p>拖动「爆炸分解」把整车拆开，再逐个点击部件查看原理说明；</p>
         <p>拉满「转向」观察拉杆推动转向节——内外轮转角并不相同（阿克曼几何）。</p>
         <p>打开「主销举升演示」并打满方向：倾斜主销（内倾/后倾）把车架顶起，内侧后轮真实离地——这就是无差速器卡丁车能过弯的原因（毫米读数为真实解算值，放大仅供教学）。</p>

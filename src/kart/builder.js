@@ -18,8 +18,10 @@ export function buildKart(reg) {
   // 主销举升演示把解算出的车架姿态（heave/roll/pitch）整体写到它上面——
   // 四轮贴地、车架被顶起；内侧后轮离地即后轴（刚连车架）随滚转被带走。
   // 各部件的局部坐标语义不变（basePos/爆炸向量不受影响）。
+  // 引用挂在 root.userData.sprung 上：赛道驾驶的位姿更新器也要写同一组（app.js）。
   const sprung = new THREE.Group();
   root.add(sprung);
+  root.userData.sprung = sprung;
 
   buildChassis(sprung, reg);
   buildBodywork(sprung, reg);

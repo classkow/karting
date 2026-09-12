@@ -24,6 +24,9 @@ const _e = new THREE.Euler();
 
 export function buildJacking(sprung, reg) {
   reg.addUpdate((dt, s) => {
+    // 赛道驾驶模式：簧载姿态由驾驶位姿更新器接管（真实举升解已并入动力学姿态），
+    // 这里直接让位，避免每帧覆写互抢。
+    if (s.drivingActive) return;
     const pose = solveChassisPose(s.steerAngleL, s.steerAngleR, GEOM);
     // 面板读数：真实解算值（不乘放大系数），取内侧（离地侧）
     s.jackingLiftMM = Math.max(pose.rearLiftL, pose.rearLiftR) * 1000;

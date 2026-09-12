@@ -1,18 +1,27 @@
 import * as THREE from 'three';
 import { createStage } from './core/stage.js';
 import { createPostFX } from './core/postfx.js';
-import { updateEngineAudio, disposeEngineAudio } from './core/audio.js';
+import { updateEngineAudio, disposeEngineAudio, updateDrivingAudio, disposeDrivingAudio, playCountBeep } from './core/audio.js';
 import { createFpsGuard } from './core/fpsGuard.js';
 import { buildKart } from './kart/builder.js';
 import { createRegistry, systemMeta } from './kart/registry.js';
 import { createSim } from './sim/state.js';
 import { solveCycle as solveCycleModel } from './sim/cycle.js';
+import { createTrackModel } from './sim/track.js';
+import { createDrivingState, resetDrivingState, resetLapTiming, respawnOnTrack, stepDriving } from './sim/driving.js';
+import { createAIController, createAIShell, stepAI } from './sim/ai.js';
+import { createRaceEntrants, rankEntrants, finishEntrant, resolveKartCollisions, RACE_LAPS } from './sim/race.js';
+import { buildTrackScene } from './core/trackScene.js';
 import { initExplode } from './interaction/explode.js';
 import { initPicking } from './interaction/picking.js';
 import { initCameraRig } from './interaction/cameraRig.js';
 import { initShortcuts } from './interaction/shortcuts.js';
+import { initDriveCamera, DRIVE_CAMS } from './interaction/driveCamera.js';
 import { initPartsPanel, initControlPanel, initInfoCard, initTooltip, initHelp, initPanelCollapse, initDemoCaption } from './ui/panels.js';
 import { createDemoPlayer } from './ui/demoPlayer.js';
+import { initTrackHUD } from './ui/hud.js';
+import { initTrackMenu } from './ui/trackMenu.js';
+import { buildAIVisual, createAIVisualAnimator, disposeAIVisual } from './kart/aiKarts.js';
 
 // ————— 应用装配与主循环 —————
 // 依赖方向：app → { core, kart, sim, interaction, ui }；kart/sim 不依赖 interaction/ui。
@@ -50,6 +59,34 @@ export function createApp() {
   const kart = buildKart(registry);
   scene.add(kart);
 
+  // ————— 赛道世界（惰性构建，进赛道才生成）—————
+  const track = createTrackModel();
+  const practiceDriving = createDrivingState(); // 练习模式（也是菜单/展台还原）用的驾驶状态
+  let driving = practiceDriving; // 当前受控车的 driving 状态（比赛时切到发车格实例）
+  let trackSceneObj = null;
+  const driveCam = initDriveCamera(camera);
+  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  let race = null; // 比赛态：{ tier, entrants, playerE, racers[], raceTime, over }
+
+  // 驾驶位姿更新器：注册序在所有部件更新器之后（buildKart 内各系统先跑），
+  // 赛道模式下最后落位——机构位姿（转向/举升解）同帧生效，零帧滞后。
+  const _poseEuler = new THREE.Euler();
+  registry.addUpdate((dt, s) => {
+    if (!s.drivingActive) return;
+    kart.position.set(driving.x, 0, driving.z);
+    kart.rotation.y = driving.yaw;
+    // 簇载组姿态 = 真实举升解 + 动态侧倾/俯仰（stepDriving 已合成，jacking 更新器此时让位）
+    _poseEuler.set(-driving.pitch, 0, -driving.roll);
+    const sprung = kart.userData.sprung;
+    sprung.quaternion.setFromEuler(_poseEuler);
+    sprung.position.y = driving.heave ?? 0;
+    // 前轮按地面速度滚动（后轮由 wheels 更新器按 s.wheelOmega 滚，半径不同分开口径）
+    const wfl = registry.getPart('wheel-fl')?.group;
+    const wfr = registry.getPart('wheel-fr')?.group;
+    if (wfl) wfl.rotation.x += driving.wheelOmegaF * dt;
+    if (wfr) wfr.rotation.x += driving.wheelOmegaF * dt;
+  });
+
   const explode = initExplode(registry);
   // ctrl / demoPlayer 稍后创建（初始化顺序），用前置声明打破引用环
   let ctrl = null;
@@ -58,6 +95,10 @@ export function createApp() {
     onStopAutoRotate: () => ctrl?.setRotateUI(false),
     instantFly: reduceMotion,
   });
+
+  // ————— 模式状态（展台 / 赛道）—————
+  let mode = 'showroom';
+  const countdown = { active: false, t: 0, lastShown: null };
 
   // ————— UI —————
   const tooltip = initTooltip(document.getElementById('tooltip'));
@@ -104,6 +145,7 @@ export function createApp() {
 
   const chipEngine = document.getElementById('chip-engine');
   const chipFps = document.getElementById('chip-fps');
+  const btnTrack = document.getElementById('btn-track');
 
   ctrl = initControlPanel(document.getElementById('control-panel'), {
     // 滑条是用户输入通道：拖动任一滑条 = 演示播放中的手动介入 → 暂停
@@ -189,6 +231,27 @@ export function createApp() {
     caption: initDemoCaption(),
   });
 
+  // ————— 赛道 HUD —————
+  const hud = initTrackHUD(document.getElementById('track-hud'), {
+    track,
+    storage,
+    touch: isTouch,
+    onCamCycle() {
+      hud.setCam(driveCam.cycle());
+    },
+    onExit: () => exitTrack(),
+  });
+  hud.onHold = (dir, on) => driveKeys.press(dir, on);
+
+  // ————— 赛道模式菜单（练习 / 比赛·三档）—————
+  const menu = initTrackMenu(document.getElementById('track-menu'), {
+    storage,
+    onPractice: () => beginActivity('practice'),
+    onRace: (tier) => beginActivity({ race: tier }),
+    onExit: () => exitTrack(),
+    onAgain: () => beginActivity({ race: race?.tier ?? 'elite' }),
+  });
+
   // ————— 拾取 —————
   const lastPointer = [0, 0];
   canvas.addEventListener('pointermove', (e) => {
@@ -196,7 +259,8 @@ export function createApp() {
     lastPointer[1] = e.clientY;
   });
 
-  const picking = initPicking({    canvas,
+  const picking = initPicking({
+    canvas,
     camera,
     kartRoot: kart,
     registry,
@@ -225,7 +289,23 @@ export function createApp() {
     }
   });
 
-  const driveKeys = initShortcuts({ sim, ctrl, explode, rig, help, infoCard, picking });
+  const driveKeys = initShortcuts({
+    sim, ctrl, explode, rig, help, infoCard, picking,
+    trackApi: {
+      isTrack: () => mode === 'track',
+      onCamCycle: () => hud.setCam(driveCam.cycle()),
+      onRespawn: () => {
+        if (mode !== 'track' || menu.menuVisible) return;
+        countdown.active = false;
+        hud.setCountdown(null);
+        // 比赛：原地救车（保进度）；练习：回起点重新发车
+        if (race && !race.over) respawnOnTrack(driving, track);
+        else resetDrivingState(driving, track, sim.time);
+      },
+      onExit: () => backOrExit(),
+      autoThrottle: () => isTouch && hud.autoThrottle(), // 自动油门只属于触屏方案
+    },
+  });
 
   // 演示播放中按任意驾驶键 = 手动介入 → 暂停（旁观监听，不改动 shortcuts.js 的输入处理）
   window.addEventListener('keydown', (e) => {
@@ -248,6 +328,166 @@ export function createApp() {
     },
   });
 
+  // ————— 模式切换：展台 ↔ 赛道 —————
+  function enterTrack() {
+    if (mode === 'track') return;
+    mode = 'track';
+    // 展台态全部收干净：演示/信息卡/爆炸/举升/慢放/环绕
+    demoPlayer?.stop();
+    infoCard.show(null);
+    picking.select(null);
+    picking.enabled = false;
+    explode.setTarget(0);
+    ctrl.setExplodeUI(0);
+    sim.jackingDemo = 0;
+    ctrl.setJackingUI(false, sim.jackingScale);
+    if (sim.visualSlow !== 0.2) {
+      sim.visualSlow = 0.2;
+      ctrl.setCycleSlowUI(false);
+    }
+    controls.autoRotate = false;
+    ctrl.setRotateUI(false);
+
+    // 世界切换 + 车摆发车位，出模式菜单（练习 / 比赛三档由用户选）
+    if (!trackSceneObj) trackSceneObj = buildTrackScene(track);
+    scene.add(trackSceneObj);
+    stage.setWorld('track');
+    controls.enabled = false; // OrbitControls 停更（chase 相机接管相机）
+    sim.drivingActive = true;
+    resetDrivingState(driving, track, sim.time);
+    kart.position.set(driving.x, 0, driving.z);
+    kart.rotation.y = driving.yaw;
+    driveCam.snap();
+    hud.setCam(DRIVE_CAMS[0]);
+    hud.setRaceInfo(null);
+    document.getElementById('track-hud').classList.remove('hidden');
+    document.body.classList.add('track-mode');
+    btnTrack.textContent = '← 返回展台';
+    countdown.active = false;
+    menu.showMenu();
+  }
+
+  function exitTrack() {
+    if (mode !== 'track') return;
+    mode = 'showroom';
+    countdown.active = false;
+    hud.setCountdown(null);
+    menu.hide();
+    cleanupRace();
+    hud.setRaceInfo(null);
+    sim.drivingActive = false;
+    updateDrivingAudio({ active: false });
+    // 驾驶输入与车辆状态归零
+    sim.throttle = 0;
+    sim.steer = 0;
+    sim.brakeTarget = 0;
+    sim.driftHeld = false;
+    ctrl.setThrottleUI(0);
+    ctrl.setSteerUI(0);
+    ctrl.setBrakeUI(0);
+    // 世界与相机还原
+    scene.remove(trackSceneObj);
+    stage.setWorld('showroom');
+    controls.enabled = true;
+    kart.position.set(0, 0.02, 0);
+    kart.rotation.y = 0;
+    document.getElementById('track-hud').classList.add('hidden');
+    document.body.classList.remove('track-mode');
+    btnTrack.textContent = '🏁 上赛道';
+    picking.enabled = true;
+    // 追逐相机会改 FOV（速度感），退出时还原展台口径（stage 初始 40）
+    camera.fov = 40;
+    camera.updateProjectionMatrix();
+    rig.applyView('home', 1.1);
+  }
+
+  // ————— 活动（练习 / 比赛）生命周期 —————
+  function cleanupRace() {
+    if (!race) return;
+    for (const r of race.racers) {
+      scene.remove(r.visual);
+      disposeAIVisual(r.visual);
+    }
+    race = null;
+    hud.setRaceInfo(null);
+  }
+
+  function beginActivity(mode) {
+    menu.hide();
+    countdown.active = false;
+    cleanupRace();
+    hud.setCountdown(null);
+    if (mode === 'practice') {
+      // 练习：单车从起点线发车，圈时从 GO 起算
+      cleanupRace();
+      driving = practiceDriving;
+      resetDrivingState(driving, track, sim.time);
+      kart.position.set(driving.x, 0, driving.z);
+      kart.rotation.y = driving.yaw;
+    } else {
+      // 比赛：玩家 + 3 名同档 AI，双排发车格，玩家末位（P4）
+      const tier = mode.race;
+      storage.set('kart.raceTier', tier);
+      const entrants = createRaceEntrants(
+        tier,
+        track,
+        (color, number) => buildAIVisual(kart, { color, number }),
+      );
+      race = {
+        tier,
+        entrants,
+        playerE: entrants[0],
+        racers: [],
+        raceTime: 0,
+        over: false,
+      };
+      for (let i = 1; i < entrants.length; i++) {
+        const e = entrants[i];
+        const visual = e.visual; // race.js 经工厂回调创建并挂在 entrant 上
+        scene.add(visual);
+        race.racers.push({
+          e,
+          shell: createAIShell(),
+          ai: createAIController(e.tier, i),
+          visual,
+          animator: createAIVisualAnimator(visual),
+        });
+      }
+      driving = entrants[0].st; // 受控车切到玩家发车格实例
+      kart.position.set(driving.x, 0, driving.z);
+      kart.rotation.y = driving.yaw;
+      for (const r of race.racers) r.animator.update(r.e.st, r.shell);
+      sim.throttle = 0;
+      sim.brakeTarget = 0;
+    }
+    driveCam.snap();
+    startCountdown();
+  }
+
+  // Esc：菜单开着 = 退出赛道；否则（练习/比赛进行中）= 弃赛回菜单
+  function backOrExit() {
+    if (menu.menuVisible) {
+      exitTrack();
+      return;
+    }
+    cleanupRace();
+    driving = practiceDriving;
+    resetDrivingState(driving, track, sim.time);
+    kart.position.set(driving.x, 0, driving.z);
+    kart.rotation.y = driving.yaw;
+    hud.setRaceInfo(null);
+    driveCam.snap();
+    menu.showMenu();
+  }
+
+  function startCountdown() {
+    countdown.active = true;
+    countdown.t = 3.7;
+    countdown.lastShown = null;
+  }
+
+  btnTrack.addEventListener('click', () => (mode === 'track' ? exitTrack() : enterTrack()));
+
   // ————— 主循环 —————
   const clock = new THREE.Clock();
   let running = true;
@@ -262,13 +502,100 @@ export function createApp() {
   let steerWasCentered = true; // 上一帧是否回中（回中沿立即刷一次"—"，避免残留旧角度）
 
   function frame(dt, rawDt = dt, render = true) {
-    driveKeys.update(dt); // 长按 W/S/A/D 的持续输入
+    driveKeys.update(dt); // 长按 W/S/A/D 的持续输入（双模式语义）
     demoPlayer.update(dt); // 演示时间轴先推进：动作写入 sim 后同帧参与解算
     sim.step(dt);
-    registry.runUpdates(dt, sim); // 各部件先写机构位姿（动态件写 mechPos）
+
+    let raceOthers = null; // 比赛 AI 的小地图位置（随帧传给 HUD）
+    if (sim.drivingActive) {
+      // ——— 赛道模式分支：倒计时 → 动力学 → 比赛推进 → 驾驶音效/相机/HUD ———
+      const menuOpen = menu.visible;
+      const trackLocked = countdown.active || menuOpen || (race && race.over);
+
+      if (countdown.active) {
+        countdown.t -= dt;
+        const shown = countdown.t > 0.6 ? Math.min(3, Math.ceil(countdown.t - 0.6)) : 'go';
+        if (shown !== countdown.lastShown) {
+          countdown.lastShown = shown;
+          if (shown === 'go') {
+            playCountBeep(true);
+            if (!sim.engineOn && sim.cranking <= 0) sim.startEngine(); // 忘了点火也照常发车
+            if (race) {
+              for (const e of race.entrants) resetLapTiming(e.st, sim.time, track); // 发车格已摆好，只重置计时
+            } else {
+              resetDrivingState(driving, track, sim.time); // 练习：圈时从 GO 起算
+            }
+            hud.setCountdown('go');
+          } else {
+            playCountBeep(false);
+            hud.setCountdown(shown);
+          }
+        }
+        if (countdown.t <= 0.15) {
+          countdown.active = false;
+          hud.setCountdown(null);
+        }
+      }
+
+      stepDriving(driving, sim, track, dt, { launchLock: trackLocked });
+
+      // ——— 比赛推进：AI 决策/物理 → 车间碰撞 → 完赛判定 → 排名 ———
+      if (race && !menuOpen) {
+        if (!countdown.active && !race.over) race.raceTime += dt;
+        for (const r of race.racers) {
+          stepAI(r.ai, r.e.st, r.shell, track, dt, { launchLock: countdown.active });
+          if (r.ai.wantReset) respawnOnTrack(r.e.st, track); // 卡死自救（保进度）
+          stepDriving(r.e.st, r.shell, track, dt, { launchLock: countdown.active });
+          r.animator.update(r.e.st, r.shell);
+          if (!r.e.finished && r.e.st.lap >= RACE_LAPS) {
+            finishEntrant(race.entrants, r.e, race.raceTime);
+          }
+        }
+        resolveKartCollisions(race.entrants.map((e) => e.st));
+        // 玩家冲线 → 结算面板（AI 继续在背景里跑完）
+        if (!race.over && driving.lap >= RACE_LAPS) {
+          finishEntrant(race.entrants, race.playerE, race.raceTime);
+          race.over = true;
+          sim.throttle = 0;
+          ctrl.setThrottleUI(0);
+          const ranked = rankEntrants(race.entrants);
+          menu.showResults(ranked.map((e) => ({
+            name: e.name,
+            isPlayer: e.isPlayer,
+            finished: e.finished,
+            finishTime: e.finishTime,
+            lapTimeMs: e.st.bestLapMs,
+          })), { tier: race.tier });
+        }
+        const rankedNow = rankEntrants(race.entrants);
+        hud.setRaceInfo({
+          pos: rankedNow.indexOf(race.playerE) + 1,
+          total: race.entrants.length,
+          laps: RACE_LAPS,
+        });
+      }
+
+      updateDrivingAudio({
+        active: prefs.sound,
+        screech01: driving.slip01,
+        kerb01: driving.onKerb,
+        grass01: driving.onGrass,
+        speed01: Math.min(1, driving.speed / 38),
+      });
+      if (race) raceOthers = race.racers.map((r) => ({ x: r.e.st.x, z: r.e.st.z }));
+    }
+
+    registry.runUpdates(dt, sim); // 各部件先写机构位姿（动态件写 mechPos；驾驶位姿更新器最后落位）
     explode.update(dt);           // 再由爆炸模块统一落 position —— 动态件零帧滞后
-    rig.update(dt);
-    controls.update();
+
+    if (sim.drivingActive) {
+      driveCam.update(dt, kart, driving);
+      stage.followKey(kart.position); // 主光阴影相机跟车
+      hud.frame(sim, driving, dt, raceOthers);
+    } else {
+      rig.update(dt);
+      controls.update();
+    }
 
     ctrl.frame(sim.rpm, sim.speedKmh, sim.engineOn);
 
@@ -374,7 +701,10 @@ export function createApp() {
   });
 
   // 卸载/进 bfcache 时释放音频资源；从 bfcache 恢复后 ctx/nodes 为空，会自动重建
-  window.addEventListener('pagehide', disposeEngineAudio);
+  window.addEventListener('pagehide', () => {
+    disposeEngineAudio();
+    disposeDrivingAudio();
+  });
 
   // ————— WebGL 上下文丢失恢复 —————
   // 驱动重置 / GPU 进程崩溃 / 移动端后台回收：不停主循环会持续报错并黑屏，
@@ -426,6 +756,14 @@ export function createApp() {
     controls,
     explode,
     demoPlayer,
+    track,
+    driving,
+    driveKeys,
+    enterTrack,
+    exitTrack,
+    menu,
+    get race() { return race; },
+    get mode() { return mode; },
     step: (dt = 1 / 60, n = 1, render = false) => {
       for (let i = 0; i < n; i++) frame(dt, dt, render);
     },

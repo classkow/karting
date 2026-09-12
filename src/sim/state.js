@@ -37,6 +37,9 @@ export function createSim() {
     speedKmh: 0,
     time: 0,
     cycle: createCycleModel(), // 二冲程换气循环（sim/cycle.js，ATDC 角基，随 crankAngle 同基推进）
+    // ——— 赛道驾驶通道（sim/driving.js；展台模式下恒为初值，零开销）———
+    drivingActive: false, // 赛道模式标志：jacking 让位、驾驶位姿更新器接管、HUD 生效
+    driftHeld: false,     // Shift 漂移键（shortcuts 触屏按钮写入，stepDriving 消费）
   };
 
   s.startEngine = () => {

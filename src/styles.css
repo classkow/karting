@@ -1225,3 +1225,478 @@ input[type='range']:focus-visible {
   width: 138px;
   display: block;
 }
+
+/* ————— 赛道驾驶模式 ————— */
+
+/* 顶栏入口按钮 */
+.track-btn {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+.track-btn:hover {
+  background: var(--accent-dim);
+}
+
+/* 赛道模式：展台 UI 全部让位给画面与 HUD */
+body.track-mode #parts-panel,
+body.track-mode #control-panel,
+body.track-mode #info-card,
+body.track-mode #tooltip,
+body.track-mode #hint,
+body.track-mode #demo-caption {
+  display: none;
+}
+
+/* ————— HUD ————— */
+#track-hud {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none; /* 画布事件穿透，仅按钮可点 */
+  font-variant-numeric: tabular-nums;
+}
+#track-hud.hidden {
+  display: none;
+}
+#track-hud button {
+  pointer-events: auto;
+}
+
+/* 顶部：圈数与计时 */
+.hud-top {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 9px 18px;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
+}
+.hud-lap {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+.hud-lap b {
+  color: var(--accent);
+  font-size: 19px;
+  font-family: var(--mono);
+  margin-left: 4px;
+}
+.hud-cur {
+  color: var(--text);
+  font-size: 21px;
+  font-weight: 700;
+  font-family: var(--mono);
+  min-width: 86px;
+  text-align: center;
+}
+.hud-sub {
+  color: var(--faint);
+  font-size: 11px;
+}
+.hud-sub b {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-weight: 600;
+  margin-left: 3px;
+}
+
+/* 中央大字：倒计时 / GO / BOOST / 逆行 */
+.hud-center {
+  position: absolute;
+  top: 26%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.hud-center.show {
+  opacity: 1;
+}
+.hud-center b {
+  display: block;
+  font-size: 92px;
+  font-weight: 900;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.55);
+  animation: hud-pop 0.28s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.hud-count {
+  color: var(--text);
+  font-family: var(--mono);
+}
+.hud-go {
+  color: var(--green);
+  letter-spacing: 0.06em;
+}
+.hud-boost {
+  color: var(--accent);
+  font-size: 46px !important;
+  letter-spacing: 0.14em;
+}
+.hud-wrong {
+  color: var(--danger);
+  font-size: 40px !important;
+  letter-spacing: 0.1em;
+}
+@keyframes hud-pop {
+  from { transform: scale(1.7); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* 左下：速度 + 离合 + 迷你转速条 */
+.hud-bl {
+  position: absolute;
+  left: 18px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 16px 10px;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow);
+}
+.hud-speed {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.hud-speed b {
+  font-size: 40px;
+  font-weight: 800;
+  font-family: var(--mono);
+  color: var(--text);
+  line-height: 1;
+}
+.hud-speed i {
+  font-style: normal;
+  color: var(--faint);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+.hud-clutch {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+#hud-tach {
+  width: 150px;
+  height: 46px;
+  display: block;
+}
+
+/* 右下：小地图 + 按钮 */
+.hud-br {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+#hud-map {
+  width: 168px;
+  height: 168px;
+  background: rgba(10, 14, 20, 0.55);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: var(--blur);
+}
+.hud-btns {
+  display: flex;
+  gap: 8px;
+}
+.hud-btns button {
+  pointer-events: auto;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 12px;
+  backdrop-filter: var(--blur);
+}
+.hud-btns button:hover {
+  border-color: var(--stroke-strong);
+  color: var(--accent);
+}
+.hud-btns kbd {
+  margin-left: 4px;
+}
+
+/* 底部操作提示（8s 后淡出） */
+.hud-hint {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  padding: 7px 16px;
+  background: rgba(10, 14, 20, 0.6);
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  transition: opacity 1.2s;
+  white-space: nowrap;
+}
+.hud-hint.fade {
+  opacity: 0;
+}
+
+/* 触屏驾驶按钮 */
+.hud-touch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ht-group {
+  position: absolute;
+  bottom: 96px;
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+.ht-left {
+  left: 18px;
+}
+.ht-right {
+  right: 18px;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.ht-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(14, 18, 25, 0.72);
+  border: 1.5px solid var(--stroke-strong);
+  color: var(--text);
+  font-size: 22px;
+  backdrop-filter: var(--blur);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ht-btn.ht-sm {
+  width: auto;
+  height: 46px;
+  border-radius: 999px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+.ht-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#hud-auto {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  pointer-events: auto;
+}
+
+/* 帮助弹窗内的分区标题（赛道键位 / 触屏） */
+.help-sec {
+  margin: 14px 0 8px;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+}
+
+/* ————— 赛道模式菜单 / 比赛结算 ————— */
+#track-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+#track-menu.hidden {
+  display: none;
+}
+.tm-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 11, 0.55);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+.tm-card {
+  width: min(430px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  background: var(--panel-solid);
+  border: 1px solid var(--stroke-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 18px 18px 14px;
+}
+.tm-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.tm-head b {
+  font-size: 18px;
+  color: var(--text);
+}
+.tm-head span {
+  color: var(--faint);
+  font-size: 12px;
+}
+.tm-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  margin-bottom: 8px;
+  text-align: left;
+  background: rgba(20, 26, 35, 0.8);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  color: var(--text);
+  position: relative;
+  transition: border-color 0.15s, background 0.15s;
+}
+.tm-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.tm-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(126, 148, 175, 0.12);
+  color: var(--muted);
+  flex: none;
+}
+.tm-trookie { color: #4cc2ff; }
+.tm-ielite { color: #b48cff; }
+.tm-tchampion { color: var(--accent); }
+.tm-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tm-tx b {
+  font-size: 14.5px;
+}
+.tm-tx i {
+  font-style: normal;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.tm-exit {
+  margin-top: 4px;
+  opacity: 0.85;
+}
+.tm-last {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-style: normal;
+  color: var(--accent);
+  font-size: 10.5px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--accent-dim);
+}
+
+/* 结算面板 */
+.tm-result .tm-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.tm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: rgba(20, 26, 35, 0.8);
+  border: 1px solid var(--stroke);
+}
+.tm-row.me {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.tm-pos {
+  width: 22px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+.tm-row:first-child .tm-pos {
+  color: var(--accent);
+}
+.tm-name {
+  flex: 1;
+  color: var(--text);
+  font-size: 13.5px;
+}
+.tm-time {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.tm-best {
+  color: var(--faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  width: 84px;
+  text-align: right;
+}
+.tm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* HUD 位次徽标 */
+.hud-pos {
+  color: #0a0e14;
+  background: var(--accent);
+  font-weight: 800;
+  font-size: 15px;
+  font-family: var(--mono);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+}
+.hud-pos.hidden {
+  display: none;
+}
+#hud-laps {
+  font-style: normal;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-left: 2px;
+}
+#hud-laps.hidden {
+  display: none;
+}
