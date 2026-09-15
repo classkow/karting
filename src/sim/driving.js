@@ -79,7 +79,7 @@ export function createDrivingState() {
     // 赛道关系
     s: 0,                 // 沿赛道进度（m）
     hintIdx: -1,          // 最近点查询暖启动
-    lat: 0,               // 横向偏移（右正）
+    lat: 0,               // 横向偏移（正 = 车体 +x 侧 = 驾驶员左，见 track.js 手性注）
     onGrass: 0,           // 0..1 草地深度
     onKerb: 0,            // 0..1 路肩
     // 圈计时

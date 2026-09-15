@@ -155,6 +155,67 @@ test('AI：三档参数单调递增（新锐 < 精英 < 王者）', () => {
   }
 });
 
+test('AI：切弯偏置取号 = 驾驶员系弯内侧（R03 镜像后 k 语义实证的控制器侧）', () => {
+  // 判据链：① k 的符号语义由 tests/track.test.js 钉到纸面平面图（k<0 = 右弯，15 段弯全序列表）；
+  // ② lat>0 = 中心线偏车体 +x 一侧 = 驾驶员左（track.js 手性注）；
+  // ③ 故「AI 切在弯内侧」⟺ 前瞻目标点偏置后的横向归属 sign(aimLat) = sign(tgt.k)。
+  // 注：本判据对手性取反不变（镜像时 lat 与 k 同时反号），它证明的是「镜像后 AI 走线不会
+  // 退化成切外弯」；镜像本身由 tests/track.test.js 的纸面序列表把守。
+  const track = createTrackModel();
+  const cfg = AI_TIERS.champion;
+  const bad = [];
+  const flag = track.samples.map((sp) => Math.abs(sp.k) > 1 / 32);
+  const runs = [];
+  let cur = [];
+  for (let i = 0; i < flag.length; i++) {
+    if (flag[i]) cur.push(i);
+    else if (cur.length) { if (cur.length >= 5) runs.push(cur); cur = []; }
+  }
+  if (cur.length >= 5) runs.push(cur);
+  assert.ok(runs.length >= 12, `复刻赛道弯段数 ${runs.length}（应 ≥12）`);
+  for (const r of runs) {
+    const s0 = track.samples[r[0]].s, s1 = track.samples[r[r.length - 1]].s;
+    const sMid = (s0 + s1) / 2;
+    const vGuess = Math.sqrt(cfg.aLat / Math.abs(track.pointAt(sMid).k)); // 弯中稳态车速量级
+    const look = Math.min(22, Math.max(cfg.lookaheadMin, cfg.lookaheadMin + vGuess * cfg.lookaheadGain));
+    const tgt = track.pointAt(sMid + look);
+    const off = cfg.apexOffset * Math.min(1, Math.abs(tgt.k) * 30);
+    if (off < 0.2) continue; // 该前瞻点几乎不偏置（出弯直道），不参与判号
+    const ax = tgt.x + tgt.tz * Math.sign(tgt.k) * off;
+    const az = tgt.z - tgt.tx * Math.sign(tgt.k) * off;
+    const aimLat = track.nearest(ax, az, -1).lat;
+    if (Math.sign(aimLat) !== Math.sign(tgt.k)) {
+      bad.push(`弯 s=${s0.toFixed(0)}~${s1.toFixed(0)}：tgt.k=${tgt.k.toFixed(3)} 但偏置后 lat=${aimLat.toFixed(2)}（切到弯外侧）`);
+    }
+  }
+  assert.deepEqual(bad, [], '王者组每个弯的切弯偏置必须落在该弯内侧');
+});
+
+test('AI：镜像后王者组在 1:1 复刻赛道完整一圈不冲出路面（走线闭环回归）', () => {
+  const track = createTrackModel();
+  const st = createDrivingState();
+  resetDrivingState(st, track, 0);
+  const ai = createAIController('champion', 7);
+  const shell = createAIShell();
+  const dt = 1 / 60;
+  let lastS = st.s;
+  let maxLat = 0;
+  let lapTime = 0;
+  let finished = false;
+  for (let i = 0; i < 60 * 160 && !finished; i++) {
+    stepAI(ai, st, shell, track, dt, { launchLock: false });
+    stepDriving(st, shell, track, dt);
+    maxLat = Math.max(maxLat, Math.abs(st.lat));
+    if (st.s - lastS < -track.length / 2) finished = true;
+    lastS = st.s;
+    lapTime += dt;
+  }
+  assert.ok(finished, '王者组应在 160s 内完成一圈');
+  // 圈时上界推导：857m ÷ 均速 ≥6.1m/s（AI 实测均速 ≈10.9m/s，此处取 1.8 倍宽容带）= 140s
+  assert.ok(lapTime < 140, `圈时 ${lapTime.toFixed(1)}s 应 < 140s`);
+  assert.ok(maxLat < track.halfWidth, `全程最大横向偏移 ${maxLat.toFixed(2)}m 应 < 半宽 ${track.halfWidth}m（不冲出沥青）`);
+});
+
 test('AI 三档在 1:1 复刻赛道（含发卡）整圈节奏排序：王者 < 精英 < 新锐', () => {
   // 变更背景：复刻赛道含 R≈4.4m 发卡，调参前王者组以 2 倍弯速预算冲出弯心
   // （圈时 108.3s 慢于精英 102.2s，单调性反向——红记录见交付说明）；修复

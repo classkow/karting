@@ -101,6 +101,19 @@ missions/             Git-ignored task packets and delivery notes (workflow arti
 - **Dual-mode semantics.** Showroom (exhibition) and track mode have
   separate key maps and CSS (`body.track-mode`). Showroom behaviour is
   historical and frozen; regressions there are release blockers.
+- **Track world handedness is pinned to the floor plan.** `docs/build_track.mjs`
+  maps paper→world as east = +x, north = **−z** (SVG y grows downward, so paper y
+  and world z share a sign — `toWorld` must NOT negate it). Re-negating z mirrors
+  the whole circuit: every corner's driver-frame turn flips while every
+  length / |k| / bbox test keeps passing. Guarded by `tests/track.test.js`
+  (15-corner turn-sign table derived from the paper polyline) plus the smoke
+  "MP1 驾驶员系右弯" and minimap-axis checks.
+- **Sign semantics: `k > 0` = driver-frame LEFT.** `samples[].k = dyaw/ds`;
+  yaw grows toward body +x, which `driving.js` documents as the chase-camera
+  left (keyboard 【左】 — contract in `tests/steering.test.js`). `nearest().lat > 0`
+  is the same body +x side. Driver-frame right is `forward × up = (−tz, tx)`.
+  Older comments calling either side "right" are legacy labels; re-derive from
+  the driver frame before adding a consumer (AI apex bias, tyre walls, kerbs).
 - **HUD/DOM writes are throttled** (10Hz text, 30Hz canvas, on-change for
   counters). Keep it that way; mobile FPS depends on it.
 - **Determinism where it matters.** Scene decoration uses a seeded LCG, not
@@ -175,6 +188,18 @@ missions/             Git-ignored task packets and delivery notes (workflow arti
 - **Reverse-aux freeze guard**: braking during launch lock must never
   engage reverse assist (`driving.js` `reversing` requires `!launchLock`);
   the countdown lock test pins this.
+- **Kerb ribbons need a radius guard — and it must read UNSMOOTHED curvature.**
+  `src/sim/kerbSpans.js` caps each band edge at `0.8 / |k|` per sample; the
+  renderer only consumes the returned spans. `samples[].k` is a ±7 m moving
+  average that smears the hairpin apex from R≈4 m up to R≈10 m, so guarding with
+  it leaves the offset band folding past the centre of curvature (measured: 465
+  coplanar triangle pairs, i.e. the high-frequency Z-fighting the user reported).
+  Unsmoothed ±3 m curvature → 0 pairs. Do not "simplify" back to fixed offsets.
+- **Replica track data is generated, never hand-edited.** `docs/build_track.mjs`
+  (git-ignored) writes `docs/trackData.gen.js` + `docs/trackBoundary.gen.js`,
+  which are copied byte-for-byte onto `src/sim/trackData.js` / `trackBoundary.js`.
+  Editing numbers in `src/sim/` breaks the replay guarantee (`node
+  docs/build_track.mjs` must leave `git diff` empty).
 - **Showroom regression is a release blocker.** The showroom smoke group
   (mechanism poses, kingpin jacking lift, demo player, exploded view) is the
   frozen baseline; if your change breaks any of it, the change is wrong.

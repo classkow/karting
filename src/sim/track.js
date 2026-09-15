@@ -1,7 +1,11 @@
 // ————— 赛道几何（纯数学，零渲染依赖，可 node --test 直接断言）—————
 // 闭合 Catmull-Rom 样条中心线 → 等弧长离散采样表 → 最近点/横向偏移/进度参数化/绕圈检测。
-// 坐标系与整车一致：x 向右，z 向车头，y 向上（俯视图 +x 在右、+z 在上）。
-// 航向角 yaw：车头方向 = (sin yaw, 0, cos yaw)，与 three.js rotation.y 直接对应。
+// 坐标系与整车一致（three.js 右手系，+y 离地）：x 向东、z 向南、y 向上。
+// 车头方向 = (sin yaw, 0, cos yaw)，与 three.js rotation.y 直接对应；
+// yaw 增大 = 车头朝 +x 侧偏转 = 驾驶员/追逐相机视角的【左】转（方向契约见
+// driving.js 头注与 tests/steering.test.js；smoke「按【左】yaw 增大」同源）。
+// 北朝上俯视时屏幕右 = +x、屏幕【下】 = +z，1:1 复刻数据按此手性映射俱乐部平面图
+// （图右=东、图上=北），故北朝上俯视图与平面图同形、不镜像（R03 Bug 1 修正点）。
 
 // 沥青路面全宽（米）。历史默认 7m；1:1 复刻赛道改由 trackData.js 提供口径（12m），
 // 此常量保留为旧展台/工具引用的兜底值。
@@ -64,7 +68,7 @@ export function createTrackModel({
   const length = cum[raw.length]; // 闭合周长
   const count = Math.max(64, Math.round(length / sampleStep));
   const step = length / count;
-  const samples = []; // { x, z, tx, tz, yaw, s, k }（k = 有符号曲率，正 = 向右转）
+  const samples = []; // { x, z, tx, tz, yaw, s, k }（k = 有符号曲率 dyaw/ds；正 = 驾驶员系左弯，负 = 右弯）
   let ri = 0;
   for (let i = 0; i < count; i++) {
     const target = i * step;
@@ -99,7 +103,7 @@ export function createTrackModel({
     let d = b - a;
     if (d > Math.PI) d -= Math.PI * 2;
     if (d < -Math.PI) d += Math.PI * 2;
-    kRaw[i] = d / (2 * step); // 1/m，正 = yaw 增大 = 向右转
+    kRaw[i] = d / (2 * step); // 1/m，正 = yaw 增大 = 驾驶员系左弯（负 = 右弯）
   }
   const kSmooth = smooth1d(kRaw, 15);
   for (let i = 0; i < count; i++) samples[i].k = kSmooth[i];
@@ -159,10 +163,12 @@ export function createTrackModel({
       }
     }
     const sp = samples[idx];
-    // 右侧法线（俯视 +x 右 +z 上：切线 (tx,tz) 的行进右侧 = (tz, −tx)）
+    // 车体 +x 侧法线（= 切线 (tx,tz) 顺时针 90° 的屏幕/俯视标注 (tz,−tx)）。
+    // 手性提示：车体 +x 是驾驶员【左】侧（driving.js 头注：x 正 = yaw 增大方向），
+    // 驾驶员右 = forward × up = (−tz, tx) = −本向量。历史命名沿用「右」，改判据前先全局核对。
     const nx = sp.tz;
     const nz = -sp.tx;
-    const lat = (x - sp.x) * nx + (z - sp.z) * nz; // 正 = 中心线右侧
+    const lat = (x - sp.x) * nx + (z - sp.z) * nz; // 正 = 中心线偏车体 +x 一侧
     // 连续进度：采样点弧长 + 沿切线投影（钳在半步内，避免越过邻采样点归属）
     const along = Math.max(-step * 0.49, Math.min(step * 0.49, (x - sp.x) * sp.tx + (z - sp.z) * sp.tz));
     return { idx, s: sp.s + along, lat, k: sp.k, sample: sp };

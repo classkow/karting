@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { asphaltMap, grassMap, kerbMap, checkerMap, skyMap, bannerMap } from './textures.js';
 import { planTrees } from '../sim/props.js';
+import { curvatureRuns, kerbSpans, KERB_Y } from '../sim/kerbSpans.js';
 
 // ————— 赛道世界：路面 / 路肩 / 起点龙门架 / 轮胎墙 / 树木 / 天空 —————
 // 与展台（stage.js 的 showroom 组）互斥显示：进赛道 → 赛道世界可见、展台隐藏。
 // 所有贴图运行时生成（textures.js），保持单文件、零外部资源。
+// 路肩/轮胎墙的弯段切分与偏移带全部由 sim/kerbSpans.js（纯数学）算好，这里只落 mesh。
 
-const KERB_K = 1 / 32;    // 曲率阈值（半径 <32m 的弯道两侧铺路肩）
 const TIRE_K = 1 / 40;    // 轮胎墙阈值（半径 <40m 的弯道外侧垒轮胎）
 
 // 确定性伪随机（截图/冒烟可复现，不用 Math.random）
@@ -18,10 +19,12 @@ function lcg(seed) {
   };
 }
 
-// 中心线带状网格：samples 的 [i0, i1) 区段（可回绕），左右偏移 offA/offB（米，沿行进右法线，
-// 负值 = 左侧），y 为铺装高度，vScale = 每米弧长的贴图 v 重复数。
+// 中心线带状网格：samples 的 [i0, i1) 区段（可回绕），左右偏移 offA/offB（米，沿车体 +x 侧
+// 法线 (tz,−tx) 计正，负值 = 另一侧；传数字=整条同宽，传数组=逐采样点偏移，可回绕取值），
+// y 为铺装高度，vScale = 每米弧长的贴图 v 重复数。
 function ribbonGeometry(track, i0, i1, offA, offB, y, vScale) {
   const n = i1 - i0;
+  const offAt = (o, j) => (typeof o === 'number' ? o : o[j % o.length]);
   const pos = new Float32Array((n + 1) * 2 * 3);
   const uv = new Float32Array((n + 1) * 2 * 2);
   const norm = new Float32Array((n + 1) * 2 * 3);
@@ -29,12 +32,14 @@ function ribbonGeometry(track, i0, i1, offA, offB, y, vScale) {
   const S = track.samples;
   for (let j = 0; j <= n; j++) {
     const sp = S[(i0 + j) % S.length];
-    const nx = sp.tz;  // 行进右侧法线
+    const nx = sp.tz;  // 车体 +x 侧法线（= 驾驶员左，见 sim/track.js 手性注）
     const nz = -sp.tx;
-    const ax = sp.x + nx * offA;
-    const az = sp.z + nz * offA;
-    const bx = sp.x + nx * offB;
-    const bz = sp.z + nz * offB;
+    const oa = offAt(offA, j);
+    const ob = offAt(offB, j);
+    const ax = sp.x + nx * oa;
+    const az = sp.z + nz * oa;
+    const bx = sp.x + nx * ob;
+    const bz = sp.z + nz * ob;
     const v = sp.s * vScale;
     pos.set([ax, y, az, bx, y, bz], j * 6);
     uv.set([0, v, 1, v], j * 4);
@@ -51,28 +56,6 @@ function ribbonGeometry(track, i0, i1, offA, offB, y, vScale) {
   geo.setAttribute('normal', new THREE.BufferAttribute(norm, 3));
   geo.setIndex(idx);
   return geo;
-}
-
-// 高曲率区段（首尾回绕合并，最小长度 minRun）
-function curvatureRuns(track, kThreshold, minRun = 5) {
-  const S = track.samples;
-  const n = S.length;
-  const flag = S.map((sp) => Math.abs(sp.k) > kThreshold);
-  // 找一个非弯起点，避免回绕段被切成两截
-  let head = flag.findIndex((f) => !f);
-  if (head < 0) head = 0;
-  const runs = [];
-  let run = [];
-  for (let j = 0; j < n; j++) {
-    const i = (head + j) % n;
-    if (flag[i]) run.push(i);
-    else if (run.length) {
-      if (run.length >= minRun) runs.push(run);
-      run = [];
-    }
-  }
-  if (run.length >= minRun) runs.push(run);
-  return runs;
 }
 
 export function buildTrackScene(track) {
@@ -108,21 +91,19 @@ export function buildTrackScene(track) {
   group.add(road);
 
   // —— 路肩（弯道两侧红白条纹，微凸 2cm）——
+  // 偏移带不在这里硬算：kerbSpans 已按"0.8 × 局部半径"逐点收口，带体不会翻折过曲率中心
+  // 与自己共面压叠（R03 Bug 2 的高频 Z-fighting：实测交叠三角对 539 → 0）。
   const kerbMat = new THREE.MeshStandardMaterial({ map: kerbMap(), roughness: 0.62, metalness: 0.04, envMapIntensity: 0.45 });
-  for (const run of curvatureRuns(track, KERB_K)) {
-    for (const side of [-1, 1]) {
-      const inner = side * (track.halfWidth - 0.06);
-      const outer = side * (track.halfWidth + 1.15);
-      const mesh = new THREE.Mesh(
-        ribbonGeometry(track, run[0], run[0] + run.length, Math.min(inner, outer), Math.max(inner, outer), 0.028, 0.5),
-        kerbMat
-      );
-      mesh.receiveShadow = true;
-      group.add(mesh);
-    }
+  for (const span of kerbSpans(track)) {
+    const mesh = new THREE.Mesh(
+      ribbonGeometry(track, span.i0, span.i0 + span.len, span.offA, span.offB, KERB_Y, 0.5),
+      kerbMat
+    );
+    mesh.receiveShadow = true;
+    group.add(mesh);
   }
 
-  // —— 起点线 + 龙门架（局部系：+z = 行进方向，+x = 行进右侧）——
+  // —— 起点线 + 龙门架（局部系：+z = 行进方向，+x = 车体横轴正向 = 驾驶员左）——
   const startG = new THREE.Group();
   startG.position.set(track.startPose.x, 0, track.startPose.z);
   startG.rotation.y = track.startPose.yaw;
@@ -169,7 +150,7 @@ export function buildTrackScene(track) {
     for (const run of curvatureRuns(track, TIRE_K, 4)) {
       for (let j = 0; j < run.length; j += 3) {
         const sp = track.samples[run[j]];
-        const side = sp.k > 0 ? -1 : 1; // 弯向外侧（k>0 右弯 → 外侧在左）
+        const side = sp.k > 0 ? -1 : 1; // 弯向外侧：k>0 = 驾驶员系左弯 → 外侧在车体 −x 一侧
         spots.push({ x: sp.x + sp.tz * side * (track.halfWidth + 2.1), z: sp.z - sp.tx * side * (track.halfWidth + 2.1), a: rand() * Math.PI });
       }
     }

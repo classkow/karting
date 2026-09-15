@@ -11,7 +11,7 @@ export const RACE_CONFIG = {
   opponents: 3, // AI 对手数（与 createRaceEntrants 的 PALETTE 数一致）
 };
 export const GRID_ROW = 4.2;     // 发车格排距（米）
-export const GRID_COL = 1.4;     // 发车格横错（米，右正）
+export const GRID_COL = 1.4;     // 发车格横错（米；正 = 车体 +x 侧 = 驾驶员左，见 sim/track.js 手性注）
 
 // 车间碰撞形状：旋转矩形（OBB），包络从车体几何推导（BUG 1「隔空气撞」修正）——
 // - 半宽 = 后轮外缘半距 = L.rearTrack + L.wheelR.w/2 ≈ 0.7225（全车最宽点，总宽 1.445m）
@@ -35,7 +35,8 @@ const AXIS_EPS = 0.12;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-// 发车格位姿：slot 0 最靠前（P1），玩家默认 P4（最后一排内圈）
+// 发车格位姿：slot 0 最靠前（P1），玩家默认 P4（最后一排、车体 +x 侧列 = 驾驶员左；
+// 镜像修正后首弯 MP1 是右弯，故玩家这一列在首弯外侧线上——交替格位的既有安排，非缺陷）
 export function gridPose(track, slot) {
   const row = Math.floor(slot / 2);
   const col = slot % 2 === 0 ? -1 : 1;

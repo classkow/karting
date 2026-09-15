@@ -109,7 +109,8 @@ export function stepAI(ai, st, shell, track, dt, { launchLock = false } = {}) {
   // ——— 转向：纯追踪 + 弯心切偏 ———
   const lookDist = clamp(cfg.lookaheadMin + st.speed * cfg.lookaheadGain, cfg.lookaheadMin, 22);
   const tgt = track.pointAt(st.s + lookDist);
-  // 切弯：目标点向弯内侧偏置（k>0 右弯 → 内侧在其行进右侧）
+  // 切弯：目标点向弯内侧偏置（k>0 = 驾驶员系左弯，内侧沿车体 +x 侧法线 (tz,−tx) → sgn=+1；
+  // k<0 右弯反号。符号语义回归见 tests/track.test.js「k 与几何差分同号」+ tests/ai.test.js 切内侧用例）
   const off = cfg.apexOffset * Math.min(1, Math.abs(tgt.k) * 30);
   const sgn = Math.sign(tgt.k);
   const tx = tgt.x + tgt.tz * sgn * off;

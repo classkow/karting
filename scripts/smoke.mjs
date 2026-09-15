@@ -446,6 +446,29 @@ async function main() {
     check('赛道: GO 后自动点火且动力学激活', goState.engine === true && goState.active === true,
       JSON.stringify(goState));
 
+    // 小地图轴向（R03 Bug1 连带）：起点线在世界 +z 极值一侧（= 图面南/底部直道），
+    // 修正后 +z 画向屏幕【下】→ 起点橙色标记必须落在画布下 1/3，上 1/3 不得有橙点。
+    // 轴向被翻回 BUG 版时，同一标记会画到上 1/3，本项立刻变红。
+    const mapInk = JSON.parse(await evalJs(rpc, `(() => {
+      const cv = document.getElementById('hud-map');
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      const H = cv.height, W = cv.width;
+      let top = 0, bottom = 0, all = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        if (d[i + 3] > 200 && Math.abs(d[i] - 255) < 24 && Math.abs(d[i + 1] - 181) < 28 && Math.abs(d[i + 2] - 71) < 40) {
+          all++;
+          if (y < H / 3) top++;
+          else if (y > (2 * H) / 3) bottom++;
+        }
+      }
+      let zmin = Infinity, zmax = -Infinity;
+      for (const sp of __kart.track.samples) { if (sp.z < zmin) zmin = sp.z; if (sp.z > zmax) zmax = sp.z; }
+      return JSON.stringify({ top, bottom, all, startZNear: (__kart.driving.z - zmin) / (zmax - zmin) });
+    })()`));
+    check('赛道: 小地图起点标记画在下 1/3（+z 向屏幕下 = 平面图同形）',
+      mapInk.all > 20 && mapInk.bottom > 0 && mapInk.top === 0, JSON.stringify(mapInk));
+
     // 全油门直线（走真实输入通道按住 W）：真实车速上升、位置前进、车轮按地面速度滚
     // 1:1 复刻赛道白名单改锚：宽度锚标定下最长直道＝底部直道（≈63m，s≈772 起）。
     // 全油门/方向检查动态定位到"最长直道起点 +2m"，避免与几何硬编码耦合。
@@ -521,6 +544,24 @@ async function main() {
     await evalJs(rpc, `__kart.driveKeys.press('left', false); "ok"`);
     await evalJs(rpc, '__kart.sim.steer = 0; "ok"');
     await evalJs(rpc, `__kart.driveKeys.press('up', false); "ok"`);
+
+    // 镜像修正（R03 Bug1，用户报障"左右弯是反的"）：构建产物内的几何实测——
+    // 首弯 MP1 在驾驶员系（right = forward × up = (−fz,fx)）必须是右弯，与俱乐部平面图同手性。
+    const mirror = JSON.parse(await evalJs(rpc, `(() => {
+      const T = __kart.track;
+      const fwd = (s, sp) => {
+        const a = T.pointAt(s - sp), b = T.pointAt(s + sp);
+        const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+        return { x: (b.x - a.x) / l, z: (b.z - a.z) / l };
+      };
+      const g = fwd(60, 6), h = fwd(66, 6);
+      return JSON.stringify({
+        firstTurn: ((h.x - g.x) * -g.z + (h.z - g.z) * g.x) > 0 ? 'R' : 'L',
+        kAt60: T.pointAt(60).k,
+      });
+    })()`));
+    check('赛道: 首弯 MP1 驾驶员系右弯（与平面图同手性，R03 镜像）', mirror.firstTurn === 'R',
+      `firstTurn=${mirror.firstTurn} k(s=60)=${mirror.kAt60.toFixed(3)}（右弯应 k<0）`);
 
     // 退出练习：展台完整还原
     await evalJs(rpc, '__kart.exitTrack(); "ok"');

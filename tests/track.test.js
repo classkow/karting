@@ -54,7 +54,7 @@ test('赛道：最近点查询——中心线上横向偏移 ≈ 0（<1mm，弦�
   }
 });
 
-test('赛道：横向偏移符号——中心线右侧为正', () => {
+test('赛道：横向偏移符号——中心线偏车体 +x 一侧为正（该侧 = 驾驶员左，见 track.js 手性注）', () => {
   // 在起点处取右法线方向偏移 2m 的点
   const sp = track.samples[track.startIndex];
   const nx = sp.tz;
@@ -216,6 +216,69 @@ test('复刻：整体轮廓包络（俯视 bbox 对齐图面，宽度锚 + 质�
   assert.ok(maxX - minX > 160 && maxX - minX < 205, `x-span=${(maxX - minX).toFixed(1)}m`);
   assert.ok(maxZ - minZ > 85 && maxZ - minZ < 110, `z-span=${(maxZ - minZ).toFixed(1)}m`);
   assert.ok(Math.abs((maxX + minX) / 2) < 8 && Math.abs((maxZ + minZ) / 2) < 8, `质心偏离原点（应近 0）`);
+});
+
+// ————— 驾驶员系转向核对（R03 Bug1：纸面→世界映射少翻一轴 = 整条赛道镜像）—————
+// 驾驶员系口径（不依赖任何注释，纯几何）：right = forward × up = (−cos yaw, sin yaw)。
+// 前进方向 f(s) = (sin yaw, cos yaw)，d f/ds ∝ (cos yaw, −sin yaw) = −right，
+// 故「右弯 ⟺ (Δf)·right > 0 ⟺ dyaw/ds < 0 ⟺ k<0」；与 driving.js 头注
+// 「yaw 增大 = 追逐相机屏幕左转」、tests/steering.test.js 方向契约同侧。
+// 返回 'R' / 'L'：用 pointAt 位置差分求切线变化，绕开 samples[].k（避免自证）。
+function driverTurnAt(tr, s, span = 6) {
+  const a = tr.pointAt(s - span), b = tr.pointAt(s), c = tr.pointAt(s + span);
+  const unit = (u, v) => { const l = Math.hypot(u, v) || 1; return { x: u / l, z: v / l }; };
+  const f1 = unit(b.x - a.x, b.z - a.z);
+  const f2 = unit(c.x - b.x, c.z - b.z);
+  const right = { x: -f1.z, z: f1.x };
+  const df = { x: f2.x - f1.x, z: f2.z - f1.z };
+  return (df.x * right.x + df.z * right.z) > 0 ? 'R' : 'L';
+}
+
+// 期望表 = 独立自纸面中心线 docs/track_polyline_px.json（与生成器、与世界采样表均无共享代码路径）：
+// 北上图面系 X=px（右=东）、Y=−py（上=北），行驶方向取底部直道自东向西（同生成器定向），
+// 有符号转角 cross(d1,d2)=dX1·dY2−dY1·dX2 < 0 = 图面顺时针 = 右弯。
+// 弯段窗口由 |k|>1/60（R<60m）、最小长度 5m 的曲率行程切分（同 trackScene.curvatureRuns 口径），
+// 纸面弧长按标定 k=0.15584 m/px 折算，与 s 窗口对齐偏差 ≤0.2m。派生脚本 .tmp/r03_paper_turns.mjs。
+const EXPECTED_TURNS = [
+  { name: 'MP1（起点后直角弯）', s0: 51, s1: 70, turn: 'R' },
+  { name: '发卡 A', s0: 96.9, s1: 137.9, turn: 'R' },
+  { name: '发卡 B', s0: 143.9, s1: 190.9, turn: 'L' },
+  { name: '弯 4', s0: 207.9, s1: 244.9, turn: 'L' },
+  { name: '弯 5', s0: 252.9, s1: 290.8, turn: 'R' },
+  { name: '弯 6', s0: 308.8, s1: 338.8, turn: 'R' },
+  { name: '弯 7', s0: 346.8, s1: 373.8, turn: 'L' },
+  { name: '弯 8', s0: 389.8, s1: 429.8, turn: 'L' },
+  { name: '弯 9', s0: 437.8, s1: 474.8, turn: 'R' },
+  { name: '弯 10', s0: 508.7, s1: 531.7, turn: 'R' },
+  { name: '弯 11', s0: 535.7, s1: 587.7, turn: 'L' },
+  { name: '弯 12', s0: 592.7, s1: 630.7, turn: 'R' },
+  { name: '弯 13', s0: 648.7, s1: 679.6, turn: 'R' },
+  { name: '弯 14', s0: 687.6, s1: 724.6, turn: 'L' },
+  { name: '弯 15', s0: 729.6, s1: 766.6, turn: 'R' },
+];
+
+test('复刻·驾驶员系转向：首弯 MP1 是右弯（用户报障"游戏里是左弯"）', () => {
+  assert.equal(driverTurnAt(track, 60), 'R', 's≈60 第一段弯在驾驶员系应为右弯');
+});
+
+test('复刻·驾驶员系转向：15 段弯逐段与纸面图同侧（镜像回归全序列）', () => {
+  const bad = [];
+  for (const c of EXPECTED_TURNS) {
+    const got = driverTurnAt(track, (c.s0 + c.s1) / 2);
+    if (got !== c.turn) bad.push(`${c.name} s=${c.s0}~${c.s1}：纸面 ${c.turn}、实得 ${got}`);
+  }
+  assert.deepEqual(bad, [], '全部弯段转向应与纸面平面图逐段一致');
+});
+
+test('复刻·驾驶员系转向：samples[].k 与几何差分同号（k 语义 = dyaw/ds，负 = 右弯）', () => {
+  const bad = [];
+  for (const c of EXPECTED_TURNS) {
+    const mid = (c.s0 + c.s1) / 2;
+    const k = track.pointAt(mid).k;
+    const wantRight = c.turn === 'R';
+    if (wantRight !== (k < 0)) bad.push(`${c.name}：期望 ${c.turn} 但 k=${k.toFixed(4)}`);
+  }
+  assert.deepEqual(bad, [], 'k 的符号语义必须与驾驶员系转向一致');
 });
 
 test('复刻：平滑后最小弯径 ≥3m（可驾驶下界：卡丁车满锁最小转弯半径 1.8m + 裕度）', () => {

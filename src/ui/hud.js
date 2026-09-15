@@ -104,8 +104,11 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
     }
     const pad = 14;
     const scale = Math.min((map.width - pad * 2) / (maxX - minX), (map.height - pad * 2) / (maxZ - minZ));
+    // 画布轴：+x 画向屏幕右、+z 画向屏幕【下】——赛道数据的世界手性是「东=+x、南=+z」
+    // （见 sim/track.js 头注），故这样画出来的小地图 = 北朝上的俱乐部平面图（同形不镜像）。
+    // R03 Bug1 修正点：镜像 BUG 时期 +z 被画成屏幕上方，小地图与平面图左右相反。
     const px = (x) => pad + (x - minX) * scale + ((map.width - pad * 2) - (maxX - minX) * scale) / 2;
-    const py = (z) => map.height - (pad + (z - minZ) * scale + ((map.height - pad * 2) - (maxZ - minZ) * scale) / 2);
+    const py = (z) => pad + (z - minZ) * scale + ((map.height - pad * 2) - (maxZ - minZ) * scale) / 2;
     c.lineJoin = 'round';
     c.lineCap = 'round';
     c.strokeStyle = 'rgba(10,14,20,0.88)';
@@ -278,8 +281,8 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
     }
     const x = mapScale.px(st.x);
     const y = mapScale.py(st.z);
-    // 车辆三角（航向：世界 nose=(sinψ,cosψ) → 画布 (sinψ, −cosψ)）
-    const ang = Math.atan2(-Math.cos(st.yaw), Math.sin(st.yaw));
+    // 车辆三角（航向：世界 nose=(sinψ,cosψ) → 画布 (sinψ, +cosψ)，画布 +y 与 +z 同向）
+    const ang = Math.atan2(Math.cos(st.yaw), Math.sin(st.yaw));
     mapCtx.save();
     mapCtx.translate(x, y);
     mapCtx.rotate(ang);
