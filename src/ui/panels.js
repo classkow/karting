@@ -1,3 +1,4 @@
+import { RACE_CONFIG } from '../sim/race.js'; // 比赛圈数/对手数文案单源（K-A12）
 import { SYSTEMS, systemMeta } from '../kart/registry.js';
 import { VIEWS } from '../interaction/views.js';
 import { CLUTCH_ENGAGE_RPM } from '../sim/state.js';
@@ -582,7 +583,7 @@ export function initHelp(overlay) {
         ${SHORTCUTS.map(([k, v]) => `<div class="hk"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}
       </div>
       <div class="help-tips">
-        <p><b>🏁 赛道模式：</b>点顶栏「上赛道」出模式菜单——单车练习，或与 3 名电脑对手跑 3 圈比赛（新锐 / 精英 / 王者三档，实力差来自真实圈速）；</p>
+        <p><b>🏁 赛道模式：</b>点顶栏「上赛道」出模式菜单——单车练习，或与 ${RACE_CONFIG.opponents} 名电脑对手跑 ${RACE_CONFIG.laps} 圈比赛（新锐 / 精英 / 王者三档，实力差来自真实圈速）；</p>
         <p>离心离合器 4000 转才接合，倒计时后地板油起步，听转速从喘振里爬起来；重刹留着直线完成（只有后轴单碟刹）；高速猛打方向会推头甚至甩尾，按住 Shift 漂移反而是解法；</p>
         <p>冲出路面草地又颠又慢；车与车有碰撞，可以卡位；圈速与位次见 HUD，最佳圈存进浏览器；</p>
         <p>手机竖屏直接玩——HUD 自动重排，左侧转向、右侧油门/刹车/漂移；油门按住加速、松开自然滑行，刹车渐进（点刹轻减速、按住刹到底），停稳按住刹车倒车；偏好自动油门可在右上角打开，横屏亦可。</p>

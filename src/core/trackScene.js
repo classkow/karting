@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { asphaltMap, grassMap, kerbMap, checkerMap, skyMap, bannerMap } from './textures.js';
+import { planTrees } from '../sim/props.js';
 
 // ————— 赛道世界：路面 / 路肩 / 起点龙门架 / 轮胎墙 / 树木 / 天空 —————
 // 与展台（stage.js 的 showroom 组）互斥显示：进赛道 → 赛道世界可见、展台隐藏。
@@ -7,7 +8,6 @@ import { asphaltMap, grassMap, kerbMap, checkerMap, skyMap, bannerMap } from './
 
 const KERB_K = 1 / 32;    // 曲率阈值（半径 <32m 的弯道两侧铺路肩）
 const TIRE_K = 1 / 40;    // 轮胎墙阈值（半径 <40m 的弯道外侧垒轮胎）
-const TREE_STEP = 6;      // 每隔 N 个采样点尝试种一棵树
 
 // 确定性伪随机（截图/冒烟可复现，不用 Math.random）
 function lcg(seed) {
@@ -193,21 +193,9 @@ export function buildTrackScene(track) {
   }
 
   // —— 树木：树干 + 双层锥形树冠（InstancedMesh × 2，散在缓冲区外）——
+  // 布点（含路面掩码排除、确定性 lcg）委托给纯数学 sim/props.js，可 node --test 断言。
   {
-    const spots = [];
-    const S = track.samples;
-    for (let i = 0; i < S.length; i += TREE_STEP) {
-      if (Math.abs(track.signedDelta(S[i].s - track.startPose.s)) < 18) continue; // 龙门架附近留空
-      if (rand() > 0.55) continue;
-      const side = rand() > 0.5 ? 1 : -1;
-      const dist = track.halfWidth + 11 + rand() * 26;
-      const sp = S[i];
-      spots.push({
-        x: sp.x + sp.tz * side * dist + (rand() - 0.5) * 6,
-        z: sp.z - sp.tx * side * dist + (rand() - 0.5) * 6,
-        s: 0.75 + rand() * 0.8,
-      });
-    }
+    const spots = planTrees(track);
     const trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 2.2, 7);
     trunkGeo.translate(0, 1.1, 0);
     const crownGeo = new THREE.ConeGeometry(1.7, 3.6, 8);

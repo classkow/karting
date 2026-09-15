@@ -5,6 +5,11 @@ import { createDrivingState } from './driving.js';
 import { L } from '../kart/layout.js';
 
 export const RACE_LAPS = 3;      // 3 圈制
+// 比赛配置单源（K-A12）：菜单文案/帮助页/HUD 的 /N 全部读这里
+export const RACE_CONFIG = {
+  laps: RACE_LAPS,
+  opponents: 3, // AI 对手数（与 createRaceEntrants 的 PALETTE 数一致）
+};
 export const GRID_ROW = 4.2;     // 发车格排距（米）
 export const GRID_COL = 1.4;     // 发车格横错（米，右正）
 
@@ -56,6 +61,19 @@ export function rankEntrants(entrants) {
     if (b.finished) return 1;
     return (b.st.total ?? 0) - (a.st.total ?? 0) || (a.gridSlot ?? 0) - (b.gridSlot ?? 0);
   });
+}
+
+// 结算面板数据组装（K-A4 纯函数）：排名 → showResults 入参形状单点化。
+// 形状契约：[{ name, isPlayer, finished, finishTime, lapTimeMs }]
+// （lapTimeMs = 该车手最佳圈毫秒，未完赛/未计圈为 0，UI 显示 '--:--.-'）。
+export function buildResults(ranked) {
+  return ranked.map((e) => ({
+    name: e.name,
+    isPlayer: e.isPlayer,
+    finished: e.finished === true,
+    finishTime: e.finishTime ?? 0,
+    lapTimeMs: e.st?.bestLapMs ?? 0,
+  }));
 }
 
 // 玩家（或任一车）冲线：记录完赛序号与用时；返回其名次（1 起）

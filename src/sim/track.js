@@ -3,28 +3,12 @@
 // 坐标系与整车一致：x 向右，z 向车头，y 向上（俯视图 +x 在右、+z 在上）。
 // 航向角 yaw：车头方向 = (sin yaw, 0, cos yaw)，与 three.js rotation.y 直接对应。
 
-export const TRACK_WIDTH = 7; // 沥青路面全宽（米），卡丁车场典型 6–8m
+// 沥青路面全宽（米）。历史默认 7m；1:1 复刻赛道改由 trackData.js 提供口径（12m），
+// 此常量保留为旧展台/工具引用的兜底值。
+export const TRACK_WIDTH = 7;
 
-// 中心线控制点（顺行驶方向）。整体逆时针（俯视）：起跑直道沿 +x（向右），
-// 右侧上行 → 顶部直道向左 → 左侧下行 → 收尾弯回到起点，弯道以左弯为主。
-const CONTROL_POINTS = [
-  [-42, -56], // 0  左下角出弯 → 起跑直道
-  [-14, -62], // 1  起跑直道
-  [14, -62],  // 2  起跑直道（起点线在 1→2 之间，x≈0）
-  [36, -57],  // 3  T1 入弯（左转上行）
-  [50, -38],  // 4  T1
-  [52, -12],  // 5  右侧直道（+z）
-  [44, 10],   // 6  T2 左弯切入
-  [52, 30],   // 7  T2-3 反向甩（右弯）
-  [40, 50],   // 8  T3 左弯上到顶直道
-  [12, 58],   // 9  顶部直道（−x）
-  [-16, 54],  // 10
-  [-38, 44],  // 11 T4 左弯下行
-  [-52, 24],  // 12 弯心
-  [-46, -2],  // 13 出弯
-  [-56, -24], // 14 T5 左甩
-  [-50, -44], // 15 收尾弯接入起跑直道
-];
+// 1:1 复刻赛道：控制点/路宽/起点锚点单源于 trackData.js（程序化提取自参考平面图）。
+import { REPLICA_CONTROL_POINTS, REPLICA_START_ANCHOR, TRACK_WIDTH_M } from './trackData.js';
 
 // 闭合 Catmull-Rom 插值（标准 0.5 系数）
 function catmullRom(p0, p1, p2, p3, t) {
@@ -47,10 +31,14 @@ function smooth1d(arr, win) {
 }
 
 export function createTrackModel({
-  points = CONTROL_POINTS,
-  width = TRACK_WIDTH,
+  points = REPLICA_CONTROL_POINTS,
+  width = TRACK_WIDTH_M,
   sampleStep = 1.0, // 离散采样目标弧长间距（米）
+  startAnchor,
 } = {}) {
+  // 起点锚点只随复刻点集默认生效；自定义点集（试验赛道）回退旧启发式 (0,-60)，
+  // 避免复刻锚点把试验赛道的 s=0 转到无关位置（回归 tests/ai、driving、steering 的 lab 赛道）。
+  const anchor = startAnchor ?? (points === REPLICA_CONTROL_POINTS ? REPLICA_START_ANCHOR : [0, -60]);
   const N = points.length;
 
   // —— 1. 按参数密集采样（每段 64 步）拿原始折线 ——
@@ -116,12 +104,12 @@ export function createTrackModel({
   const kSmooth = smooth1d(kRaw, 15);
   for (let i = 0; i < count; i++) samples[i].k = kSmooth[i];
 
-  // —— 4. 起点线：取最接近 (0, -60) 的采样点（起跑直道中部），并把采样表旋转到起点线——
+  // —— 4. 起点线：取最接近锚点（默认 = trackData.js 的起步线位置）的采样点，并把采样表旋转到起点线——
   // s=0 即起点线：计圈 wrap、发车格、龙门架三者天然同位（圈时 = 线到线，比赛口径必需）。
   let startIndex = 0;
   let best = Infinity;
   for (let i = 0; i < count; i++) {
-    const d = Math.hypot(samples[i].x - 0, samples[i].z - -60);
+    const d = Math.hypot(samples[i].x - anchor[0], samples[i].z - anchor[1]);
     if (d < best) { best = d; startIndex = i; }
   }
   if (startIndex !== 0) {

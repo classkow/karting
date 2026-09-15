@@ -11,6 +11,7 @@
 //   起步反应、操作噪声，依次递增，无橡皮筋。
 
 import { PHYS } from './driving.js';
+import { IDLE_RPM, MAX_RPM, RPM_RISE_RATE, RPM_FALL_RATE } from './state.js';
 
 export const AI_TIERS = {
   rookie: {
@@ -28,7 +29,7 @@ export const AI_TIERS = {
     id: 'elite', label: '精英组',
     aLat: 10.6, aLong: 5.2, topSpeed: 33.5,
     lookaheadMin: 9.0, lookaheadGain: 0.55,
-    apexOffset: 0.9,
+    apexOffset: 0.6,
     steerRate: 3.4,
     headingDamp: 0.55,
     reaction: 0.2,
@@ -37,9 +38,9 @@ export const AI_TIERS = {
   },
   champion: {
     id: 'champion', label: '王者组',
-    aLat: 12.2, aLong: 6.0, topSpeed: 36.5,
-    lookaheadMin: 10.0, lookaheadGain: 0.75,
-    apexOffset: 1.6,
+    aLat: 12.2, aLong: 5.8, topSpeed: 33.8,
+    lookaheadMin: 10.0, lookaheadGain: 0.55,
+    apexOffset: 1.4,
     steerRate: 4.2,
     headingDamp: 0.8,
     reaction: 0.06,
@@ -52,6 +53,16 @@ export const AI_TIER_ORDER = ['rookie', 'elite', 'champion'];
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const MAX_STEER_ANGLE = 0.3; // 前轮角物理上限（rad，与阿克曼解算满舵量级一致）
+// 制动预算折扣：vAllow 扫描假设从前瞻点一路直线刹到弯心，但发卡末段必须边转边刹
+// （摩擦圆被转向占用，实测有效减速 ≈ 直线制动 6-7 折）。不打折会在发卡前 10m 才
+// 开始真制动 → understeer 冲进弯心内场（1:1 复刻赛道 MP5/MP6 连发卡实测 30s 草地）。
+const BRAKE_BUDGET = 0.7;
+// 发卡弯速裕度：平滑采样会低估紧弯真实顶点曲率（±7.5m 窗把 R≈3m 的 U 摊到 R≈4.4m），
+// 而 180° 发卡要以贴极限侧向加速度持续 2s+，纯追踪的任何微小误差都会累积成冲出弯心。
+// 曲率越大裕度越足：R>20m 维持 0.94，R<12.5m 收到 0.75（真实车手过发卡同样只用 ~8 成极限）。
+function cornerMargin(k) {
+  return 0.94 - 0.19 * clamp((k - 1 / 20) / (1 / 8 - 1 / 20), 0, 1);
+}
 
 // AI 用的轻量 sim 壳：stepDriving 读写字段的最小集合（起步即"已点火、已过接合转速"）
 export function createAIShell() {
@@ -142,18 +153,28 @@ export function stepAI(ai, st, shell, track, dt, { launchLock = false } = {}) {
   }
 
   // ——— 速度：前瞻制动预算（aLat 留 6% 安全裕度，防贴着极限进弯）———
+  // 近段（≤30m）按 3m 加密扫描：1:1 复刻赛道含 R≈4-6m 发卡，6m 步进会跨过顶点
+  // 曲率峰（实测王者组以预算 2 倍车速冲出发卡后触发倒车辅助恶性循环）；
+  // 自身位置曲率一并纳入，兜住"已处弯中、前瞻点已出弯"的漏看场景。
   let vTarget = cfg.topSpeed;
-  for (let d = 0; d <= 90; d += 6) {
+  {
+    const kHere = Math.abs(track.pointAt(st.s).k);
+    if (kHere > 1e-4) {
+      const vCorner = Math.sqrt((cfg.aLat * cornerMargin(kHere)) / kHere);
+      if (vCorner < vTarget) vTarget = vCorner;
+    }
+  }
+  for (let d = 0; d <= 90; d += d < 30 ? 3 : 6) {
     const p = track.pointAt(st.s + d);
     const kc = Math.abs(p.k);
     if (kc < 1e-4) continue;
-    const vCorner = Math.sqrt((cfg.aLat * 0.94) / kc);
-    const vAllow = Math.sqrt(vCorner * vCorner + 2 * cfg.aLong * d);
+    const vCorner = Math.sqrt((cfg.aLat * cornerMargin(kc)) / kc);
+    const vAllow = Math.sqrt(vCorner * vCorner + 2 * cfg.aLong * BRAKE_BUDGET * d);
     if (vAllow < vTarget) vTarget = vAllow;
   }
   const kNow = Math.abs(tgt.k);
   if (kNow > 1e-4) {
-    const vCorner = Math.sqrt((cfg.aLat * 0.9) / kNow); // 近处弯加 10% 裕度
+    const vCorner = Math.sqrt((cfg.aLat * Math.min(0.9, cornerMargin(kNow))) / kNow); // 近处弯：常规裕度与发卡裕度取严
     if (vCorner < vTarget) vTarget = vCorner;
   }
 
@@ -175,10 +196,8 @@ export function stepAI(ai, st, shell, track, dt, { launchLock = false } = {}) {
   // 没有这一步，stepDriving 的离合喘振会把壳 rpm 压到接合带以下且无人推回，
   // AI 起步一帧后就永久分离离合趴窝（回归 tests/ai.test.js 整圈节奏用例）。
   {
-    const IDLE = 1800;
-    const MAX_RPM = 13800;
-    const target = IDLE + shell.throttle * (MAX_RPM - IDLE);
-    const rate = target > shell.rpm ? 3.4 : 2.0;
+    const target = IDLE_RPM + shell.throttle * (MAX_RPM - IDLE_RPM);
+    const rate = target > shell.rpm ? RPM_RISE_RATE : RPM_FALL_RATE;
     shell.rpm += (target - shell.rpm) * Math.min(1, dt * rate);
   }
 

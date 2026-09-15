@@ -10,7 +10,7 @@ import { solveCycle as solveCycleModel } from './sim/cycle.js';
 import { createTrackModel } from './sim/track.js';
 import { createDrivingState, resetDrivingState, resetLapTiming, respawnOnTrack, stepDriving } from './sim/driving.js';
 import { createAIController, createAIShell, stepAI } from './sim/ai.js';
-import { createRaceEntrants, rankEntrants, finishEntrant, resolveKartCollisions, RACE_LAPS } from './sim/race.js';
+import { createRaceEntrants, rankEntrants, finishEntrant, buildResults, resolveKartCollisions, RACE_CONFIG } from './sim/race.js';
 import { buildTrackScene } from './core/trackScene.js';
 import { initExplode } from './interaction/explode.js';
 import { initPicking } from './interaction/picking.js';
@@ -66,7 +66,14 @@ export function createApp() {
   let driving = practiceDriving; // 当前受控车的 driving 状态（比赛时切到发车格实例）
   let trackSceneObj = null;
   const driveCam = initDriveCamera(camera);
-  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  // K-A5：触屏 UI 运行时可适配。嗅探只决定初始档（提示文案/自动油门适用性）；
+  // 触屏按钮常驻 DOM，显隐由 body.touch-ui 控制——boot 嗅探或首次触屏指针事件点亮。
+  let isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const enableTouchUI = () => {
+    isTouch = true;
+    document.body.classList.add('touch-ui');
+    hud?.setTouchMode?.(true);
+  };
   let race = null; // 比赛态：{ tier, entrants, playerE, racers[], raceTime, over }
 
   // 驾驶位姿更新器：注册序在所有部件更新器之后（buildKart 内各系统先跑），
@@ -102,6 +109,7 @@ export function createApp() {
   // ————— 模式状态（展台 / 赛道）—————
   let mode = 'showroom';
   const countdown = { active: false, t: 0, lastShown: null };
+  let rankAcc = 0; // 排名 10Hz 节流（K-A3：rankEntrants 全量排序不再每帧）
 
   // ————— UI —————
   const tooltip = initTooltip(document.getElementById('tooltip'));
@@ -295,6 +303,11 @@ export function createApp() {
     }
   });
 
+  if (isTouch) enableTouchUI();
+  window.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') enableTouchUI(); // 二合一设备插拔键盘双向可用：键盘通路独立常开
+  });
+
   const driveKeys = initShortcuts({
     sim, ctrl, explode, rig, help, infoCard, picking,
     trackApi: {
@@ -335,10 +348,20 @@ export function createApp() {
   });
 
   // ————— 模式切换：展台 ↔ 赛道 —————
+  // K-A1 原子化：世界构建（真机 GPU/纹理限制下最易抛错的一步）前置到任何状态突变
+  // 之前——构建失败则展台零污染直接报错卡；后续状态切换若抛错，走 exitTrack 全链
+  // 回滚（mode 已置 track，exitTrack 按赛道态分支恢复展台 UI/世界/相机/输入）。
   function enterTrack() {
     if (mode === 'track') return;
     try {
+      if (!trackSceneObj) trackSceneObj = buildTrackScene(track);
+    } catch (e) {
+      console.error('进入赛道失败（世界构建，展台未受影响）:', e);
+      menu.showError(`enterTrack: ${e?.message ?? e}`);
+      return;
+    }
     mode = 'track';
+    try {
     // 展台态全部收干净：演示/信息卡/爆炸/举升/慢放/环绕
     demoPlayer?.stop();
     infoCard.show(null);
@@ -356,7 +379,6 @@ export function createApp() {
     ctrl.setRotateUI(false);
 
     // 世界切换 + 车摆发车位，出模式菜单（练习 / 比赛三档由用户选）
-    if (!trackSceneObj) trackSceneObj = buildTrackScene(track);
     scene.add(trackSceneObj);
     stage.setWorld('track');
     controls.enabled = false; // OrbitControls 停更（chase 相机接管相机）
@@ -374,8 +396,19 @@ export function createApp() {
     countdown.active = false;
     menu.showMenu();
     } catch (e) {
-      // 真机上若建世界/切世界抛错（GPU/纹理限制等），给出可截图的错误卡而不是无声冻结
-      console.error('进入赛道失败:', e);
+      // 状态切换半途抛错（真机内存压力等）：整链回滚到展台，再给可截图的错误卡
+      console.error('进入赛道失败（已回滚展台）:', e);
+      try { exitTrack(); } catch (rollbackErr) {
+        console.error('回滚亦失败，强制复位核心态:', rollbackErr);
+        mode = 'showroom';
+        sim.drivingActive = false;
+        scene.remove(trackSceneObj);
+        stage.setWorld('showroom');
+        controls.enabled = true;
+        document.getElementById('track-hud').classList.add('hidden');
+        document.body.classList.remove('track-mode');
+        btnTrack.textContent = '🏁 上赛道';
+      }
       menu.showError(`enterTrack: ${e?.message ?? e}`);
     }
   }
@@ -452,6 +485,9 @@ export function createApp() {
         entrants,
         playerE: entrants[0],
         racers: [],
+        // K-A3：小地图对手点/碰撞状态数组预分配，每帧原地更新，消每帧 map 分配
+        others: [],
+        states: [],
         raceTime: 0,
         over: false,
       };
@@ -470,7 +506,12 @@ export function createApp() {
       driving = entrants[0].st; // 受控车切到玩家发车格实例
       kart.position.set(driving.x, 0, driving.z);
       kart.rotation.y = driving.yaw;
-      for (const r of race.racers) r.animator.update(r.e.st, r.shell);
+      for (const r of race.racers) {
+        r.animator.update(r.e.st, r.shell);
+        race.others.push({ x: r.e.st.x, z: r.e.st.z });
+        race.states.push(r.e.st);
+      }
+      race.states.push(driving); // 玩家在末位（resolveKartCollisions 口径：全部参赛车）
       sim.throttle = 0;
       sim.brakeTarget = 0;
     }
@@ -561,35 +602,34 @@ export function createApp() {
           if (r.ai.wantReset) respawnOnTrack(r.e.st, track); // 卡死自救（保进度）
           stepDriving(r.e.st, r.shell, track, dt, { launchLock: countdown.active });
           r.animator.update(r.e.st, r.shell);
-          if (!r.e.finished && r.e.st.lap >= RACE_LAPS) {
+          if (!r.e.finished && r.e.st.lap >= RACE_CONFIG.laps) {
             finishEntrant(race.entrants, r.e, race.raceTime);
           }
         }
-        resolveKartCollisions(race.entrants.map((e) => e.st));
+        resolveKartCollisions(race.states);
         // 玩家冲线 → 结算面板（AI 继续在背景里跑完）
-        if (!race.over && driving.lap >= RACE_LAPS) {
+        if (!race.over && driving.lap >= RACE_CONFIG.laps) {
           finishEntrant(race.entrants, race.playerE, race.raceTime);
           race.over = true;
           sim.throttle = 0;
           ctrl.setThrottleUI(0);
           const ranked = rankEntrants(race.entrants);
-          menu.showResults(ranked.map((e) => ({
-            name: e.name,
-            isPlayer: e.isPlayer,
-            finished: e.finished,
-            finishTime: e.finishTime,
-            lapTimeMs: e.st.bestLapMs,
-          })), { tier: race.tier });
+          menu.showResults(buildResults(ranked), { tier: race.tier }); // K-A4：组装纯函数化
         }
         // 位次只在 GO 后更新：倒计时里 total 全为网格基准的瞬态（静止蠕动 ±1cm），
-        // 显示出来是随机名次，误导（GO 时 resetLapTiming 会给出真实网格基准）
+        // 显示出来是随机名次，误导（GO 时 resetLapTiming 会给出真实网格基准）。
+        // K-A3：排名 10Hz 节流（与 HUD 文本节流同频），不再每帧全量排序。
         if (!countdown.active) {
-          const rankedNow = rankEntrants(race.entrants);
-          hud.setRaceInfo({
-            pos: rankedNow.indexOf(race.playerE) + 1,
-            total: race.entrants.length,
-            laps: RACE_LAPS,
-          });
+          rankAcc += dt;
+          if (rankAcc >= 0.1) {
+            rankAcc = 0;
+            const rankedNow = rankEntrants(race.entrants);
+            hud.setRaceInfo({
+              pos: rankedNow.indexOf(race.playerE) + 1,
+              total: race.entrants.length,
+              laps: RACE_CONFIG.laps,
+            });
+          }
         }
       }
 
@@ -600,7 +640,13 @@ export function createApp() {
         grass01: driving.onGrass,
         speed01: Math.min(1, driving.speed / 38),
       });
-      if (race) raceOthers = race.racers.map((r) => ({ x: r.e.st.x, z: r.e.st.z }));
+      if (race) {
+        for (let i = 0; i < race.racers.length; i++) {
+          race.others[i].x = race.racers[i].e.st.x;
+          race.others[i].z = race.racers[i].e.st.z;
+        }
+        raceOthers = race.others;
+      }
     }
 
     registry.runUpdates(dt, sim); // 各部件先写机构位姿（动态件写 mechPos；驾驶位姿更新器最后落位）

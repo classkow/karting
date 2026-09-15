@@ -1,18 +1,11 @@
 import { AI_TIERS } from '../sim/ai.js';
-import { RACE_LAPS } from '../sim/race.js';
+import { RACE_CONFIG } from '../sim/race.js';
 import { icon } from './icons.js';
+import { fmtMs } from './format.js';
 
 // ————— 赛道模式菜单 + 比赛结算面板 —————
 // 进赛道先出菜单（练习 / 比赛·三档难度）；冲线出结算。两块浮层都允许指针交互，
 // 其余区域仍让位给画布。
-
-const fmtMs = (ms) => {
-  if (!ms) return '--:--.-';
-  const m = Math.floor(ms / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
-  const t = Math.floor((ms % 1000) / 100);
-  return `${m}:${String(s).padStart(2, '0')}.${t}`;
-};
 
 const TIER_DESC = {
   rookie: '冷静的节奏跑者 · 圈速慢你 8% 以上',
@@ -27,7 +20,7 @@ export function initTrackMenu(container, { storage, onPractice, onRace, onExit, 
   container.innerHTML = `
     <div id="tm-panel" class="tm-wrap">
       <div class="tm-card">
-        <div class="tm-head"><b>选择赛道模式</b><span>3 名电脑对手 · ${RACE_LAPS} 圈制</span></div>
+        <div class="tm-head"><b>选择赛道模式</b><span>${RACE_CONFIG.opponents} 名电脑对手 · ${RACE_CONFIG.laps} 圈制</span></div>
         <button class="tm-item" data-mode="practice">
           <i class="tm-ic">${icon('target', 18)}</i>
           <span class="tm-tx"><b>单车练习</b><i>独自跑圈 · 不限圈数 · 计时热身</i></span>
@@ -83,7 +76,7 @@ export function initTrackMenu(container, { storage, onPractice, onRace, onExit, 
       const won = results[0]?.isPlayer;
       elResults.innerHTML = `
         <div class="tm-card tm-result">
-          <div class="tm-head"><b>${won ? '🏆 胜利！' : '比赛结束'}</b><span>${AI_TIERS[tier]?.label ?? ''} · ${RACE_LAPS} 圈</span></div>
+          <div class="tm-head"><b>${won ? '🏆 胜利！' : '比赛结束'}</b><span>${AI_TIERS[tier]?.label ?? ''} · ${RACE_CONFIG.laps} 圈</span></div>
           <div class="tm-rows">
             ${results.map((r, i) => `
               <div class="tm-row${r.isPlayer ? ' me' : ''}">

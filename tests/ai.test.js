@@ -51,11 +51,14 @@ test('AI：直道上追踪中心线（横向偏差收敛）', () => {
 });
 
 test('AI：高速接近急弯会制动（前弯限速 < 当前速时输出刹车）', () => {
-  // 用正式赛道（T1 弯半径 ~25m，比试验椭圆的 83m 大弯更紧）
+  // 1:1 复刻赛道：起点线后的起步直道沿 −x（西）行驶，正前方 ≈30m 即 MP1 直角弯
+  // （R≈10m，弯速预算 ≈38km/h）——38m/s 冲入必须立刻制动。
   const track = createTrackModel();
   const st = createDrivingState();
   resetDrivingState(st, track, 0);
-  place(st, 10, -62, Math.PI / 2, track); // 起跑直道末端，T1 弯心在 ~40m 外
+  // 从起点位姿沿切线方向前进 30m（起点直道上、MP1 弯前）
+  const p0 = track.pointAt(track.startPose.s - 30);
+  place(st, p0.x, p0.z, p0.yaw, track);
   st.vz = 38; // 直接给高速：38m/s 远超弯道限速且制动距离不足 → 必须立刻刹
   st.speed = 38; // speed 是 stepDriving 的遥测字段，这里手动同步（不经完整物理帧）
   const ai = createAIController('champion');
@@ -151,3 +154,41 @@ test('AI：三档参数单调递增（新锐 < 精英 < 王者）', () => {
     assert.ok(r > e && e > c, `${k}: ${r} > ${e} > ${c} 不成立（应为递减）`);
   }
 });
+
+test('AI 三档在 1:1 复刻赛道（含发卡）整圈节奏排序：王者 < 精英 < 新锐', () => {
+  // 变更背景：复刻赛道含 R≈4.4m 发卡，调参前王者组以 2 倍弯速预算冲出弯心
+  // （圈时 108.3s 慢于精英 102.2s，单调性反向——红记录见交付说明）；修复
+  // （制动预算折扣 + 发卡弯速裕度 + 近段加密扫描）后单调性成立。
+  const track = createTrackModel();
+  const lapOf = (tierId) => {
+    const st = createDrivingState();
+    resetDrivingState(st, track, 0);
+    const ai = createAIController(tierId, 7);
+    const shell = createAIShell();
+    let t = 0;
+    const dt = 1 / 60;
+    let lastS = st.s;
+    let lapStart = 0;
+    let lapTime = 0;
+    for (let i = 0; i < 60 * 300; i++) {
+      stepAI(ai, st, shell, track, dt, { launchLock: false });
+      stepDriving(st, shell, track, dt);
+      t += dt;
+      const d = st.s - lastS;
+      if (d < -track.length / 2 && t - lapStart > 10) {
+        lapTime = t - lapStart;
+        break;
+      }
+      lastS = st.s;
+      if (i === 0) lapStart = t;
+    }
+    return lapTime;
+  };
+  const tRookie = lapOf('rookie');
+  const tElite = lapOf('elite');
+  const tChampion = lapOf('champion');
+  assert.ok(tRookie > 0 && tElite > 0 && tChampion > 0, `圈时 ${tRookie.toFixed(1)}/${tElite.toFixed(1)}/${tChampion.toFixed(1)}s 应都完赛`);
+  assert.ok(tChampion < tElite && tElite < tRookie,
+    `圈时应 王者(${tChampion.toFixed(1)}s) < 精英(${tElite.toFixed(1)}s) < 新锐(${tRookie.toFixed(1)}s)`);
+});
+

@@ -1,16 +1,9 @@
 import { DRIVE_CAMS } from '../interaction/driveCamera.js';
+import { fmtMs } from './format.js';
 
 // ————— 赛道 HUD：圈速计时 / 迷你转速表 / 小地图 / 倒计时 / 触屏驾驶 —————
 // DOM 写入全部节流：速度/时间 10Hz、转速条与小地图 30Hz、圈数与消息仅在变化时写。
 // 最佳圈经 storage 持久化（file:// 与隐私模式下由调用方注入的 storage 兜底）。
-
-const fmtMs = (ms) => {
-  if (!ms) return '--:--.-';
-  const m = Math.floor(ms / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
-  const t = Math.floor((ms % 1000) / 100);
-  return `${m}:${String(s).padStart(2, '0')}.${t}`;
-};
 
 export function initTrackHUD(container, { track, storage, onCamCycle, onExit, onHold, touch = false }) {
   container.innerHTML = `
@@ -37,7 +30,6 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
     <div class="hud-hint" id="hud-hint">${touch
       ? '◀ ▶ 转向 · 油门/刹车/漂移在右侧'
       : 'W 油门 · S 刹车/倒车 · A/D 转向 · Shift 漂移 · V 换视角 · R 回到起点'}</div>
-    ${touch ? `
     <div class="hud-touch">
       <div class="ht-group ht-left">
         <button class="ht-btn" data-press="left">◀</button>
@@ -49,7 +41,7 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
         <button class="ht-btn ht-pedal" data-press="up">油门</button>
       </div>
       <button id="hud-auto" class="tg"><span>自动油门</span></button>
-    </div>` : ''}
+    </div>
   `;
 
   const $ = (s) => container.querySelector(s);
@@ -94,6 +86,8 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
   let wrongWayShown = false;
   let hintTimer = 0;
   let mapScale = null;
+  let textAcc = 1;   // 计时/速度 10Hz 节流累加器（闭包私有，K-A8）
+  let tachAcc = 1;   // 转速条/小地图 30Hz 节流累加器
   let raceInfo = null; // { pos, total, laps }（比赛模式）
 
   // —— 小地图底图：赛道中心线一次性预渲染 ——
@@ -149,6 +143,14 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
     container.querySelectorAll('.ht-btn.active').forEach((b) => b.classList.remove('active'));
   });
   container.classList.toggle('is-touch', touch);
+  // K-A5：运行时可升级为触屏 UI（首次触屏指针 / 粗指针设备）。按钮常驻 DOM，
+  // 显隐交给 body.touch-ui 的 CSS；升级时同步切换提示文案与移动端提示样式。
+  const TOUCH_HINT = '◀ ▶ 转向 · 油门/刹车/漂移在右侧';
+  const KEY_HINT = 'W 油门 · S 刹车/倒车 · A/D 转向 · Shift 漂移 · V 换视角 · R 回到起点';
+  const setTouchMode = (on) => {
+    container.classList.toggle('is-touch', on);
+    elHint.textContent = on ? TOUCH_HINT : KEY_HINT;
+  };
 
   const setCenter = (html) => {
     if (html === null) { elCenter.innerHTML = ''; elCenter.classList.remove('show'); return; }
@@ -157,6 +159,7 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
   };
 
   return {
+    setTouchMode, // K-A5
     autoThrottle: () => autoThrottle,
     // 比赛信息（null = 练习模式，隐藏位次与 /3）
     setRaceInfo(info) {
@@ -198,9 +201,9 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
         try { storage.set('kart.bestLapMs', String(Math.round(st.bestLapMs))); } catch { /* 忽略 */ }
       }
       // 计时/速度（10Hz）
-      this._acc = (this._acc ?? 1) + dt;
-      if (this._acc > 0.1) {
-        this._acc = 0;
+      textAcc += dt;
+      if (textAcc > 0.1) {
+        textAcc = 0;
         elCur.textContent = st.started ? fmtMs((sim.time - st.lapStart) * 1000) : '0:00.0';
         elLast.textContent = fmtMs(st.lastLapMs);
         elSpeed.textContent = Math.round(st.speed * 3.6);
@@ -209,9 +212,9 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
           : '引擎未运转';
       }
       // 迷你转速条 + 小地图（30Hz）
-      this._tachAcc = (this._tachAcc ?? 1) + dt;
-      if (this._tachAcc > 1 / 30) {
-        this._tachAcc = 0;
+      tachAcc += dt;
+      if (tachAcc > 1 / 30) {
+        tachAcc = 0;
         drawTach(sim.rpm);
         drawMap(st, others);
       }

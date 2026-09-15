@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createTrackModel } from '../src/sim/track.js';
 import { resetLapTiming } from '../src/sim/driving.js';
 import {
-  createRaceEntrants, gridPose, rankEntrants, finishEntrant,
+  createRaceEntrants, gridPose, rankEntrants, finishEntrant, buildResults,
   resolveKartCollisions, kartsOverlap, kartContact,
   RACE_LAPS, GRID_ROW, GRID_COL, KART_SHAPE,
 } from '../src/sim/race.js';
@@ -57,6 +57,37 @@ test('比赛：排名按累计里程（跨线连续），完赛者按完赛用�
   ranked = rankEntrants(entrants);
   assert.equal(ranked[0].id, c.id);
   assert.equal(ranked[0].finishOrder, 1);
+});
+
+test('比赛：完赛→结算链路（3 圈完赛 → finishEntrant 幂等 → buildResults 形状）', () => {
+  // K-A4：结算数据组装单点化后的契约测试（app 层冲线流调用的就是这三个函数）
+  const entrants = createRaceEntrants('elite', track, null);
+  const player = entrants.find((e) => e.isPlayer);
+  // 三车完赛、一车未完赛：验证 finished 标记与排序进入结算形状
+  entrants[1].st.bestLapMs = 61234;
+  entrants[2].st.bestLapMs = 59876;
+  player.st.bestLapMs = 58123;
+  finishEntrant(entrants, entrants[2], 201.2); // AI 先冲线
+  finishEntrant(entrants, player, 203.7);       // 玩家第二
+  finishEntrant(entrants, player, 999);         // 幂等：重复冲线不算
+  assert.equal(player.finishTime, 203.7);
+  const results = buildResults(rankEntrants(entrants));
+  assert.equal(results.length, 4);
+  for (const r of results) {
+    assert.deepEqual(Object.keys(r).sort(), ['finishTime', 'finished', 'isPlayer', 'lapTimeMs', 'name']);
+  }
+  assert.equal(results[0].name, entrants[2].name);
+  assert.equal(results[0].finished, true);
+  assert.equal(Math.abs(results[0].finishTime - 201.2) < 1e-9, true);
+  assert.equal(results[0].lapTimeMs, 59876);
+  const me = results.find((r) => r.isPlayer);
+  assert.equal(me.finished, true);
+  assert.equal(me.finishTime, 203.7);
+  assert.equal(me.lapTimeMs, 58123);
+  const unfinished = results.find((r) => !r.finished);
+  assert.equal(unfinished.finished, false);
+  assert.equal(unfinished.finishTime, 0); // 未完赛无总时
+  assert.equal(unfinished.lapTimeMs, 61234); // 未完赛但已计圈时：最佳圈照常输出（UI 可显示）
 });
 
 test('比赛：完赛判定（3 圈）与重复冲线幂等', () => {

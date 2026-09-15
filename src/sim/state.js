@@ -5,8 +5,11 @@ import { createCycleModel } from './cycle.js';
 // 起动流程：起动机拖转(0.9s) → 点火成功 → 怠速，油门响应；
 // 传动比与车轮转速在这里统一结算，各部件更新器只读取。
 
-const IDLE = 1800;
+export const IDLE_RPM = 1800;
 export const MAX_RPM = 13800;
+// 转速逼近速率（怠速→目标转速的指数逼近系数；ai.js 转速回推同律单源，K-A9）
+export const RPM_RISE_RATE = 3.4;
+export const RPM_FALL_RATE = 2.0;
 // 蹄块式离心离合器接合转速（engine.js 说明文案"约 4000 rpm"以本常量为准）
 export const CLUTCH_ENGAGE_RPM = 4000;
 const RATIO = L.clutchR / L.sprocketR; // 12T / 66T ≈ 0.182
@@ -67,8 +70,8 @@ export function createSim() {
     } else if (s.engineOn) {
       // 怠速波动 + 油门响应
       const wobble = 1 + Math.sin(s.time * 11) * 0.012 + Math.sin(s.time * 4.7) * 0.008;
-      const target = (IDLE + s.throttle * (MAX_RPM - IDLE)) * wobble;
-      const rate = target > s.rpm ? 3.4 : 2.0;
+      const target = (IDLE_RPM + s.throttle * (MAX_RPM - IDLE_RPM)) * wobble;
+      const rate = target > s.rpm ? RPM_RISE_RATE : RPM_FALL_RATE;
       s.rpm += (target - s.rpm) * Math.min(1, dt * rate);
     } else {
       s.rpm += (0 - s.rpm) * Math.min(1, dt * 1.6);

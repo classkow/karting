@@ -363,9 +363,48 @@ async function main() {
     await evalJs(rpc, '__kart.explode.setTarget(0); "ok"');
 
     // 7. 赛道·练习模式（菜单 → 单车练习 → 倒计时 → 驾驶全链路）
+    // K-A1 原子化回滚：状态切换半途注入异常 → exitTrack 全链回滚 → 展台可用
+    {
+      await evalJs(rpc, `(() => {
+        const orig = document.body.classList.add;
+        window.__origClassAdd = orig;
+        document.body.classList.add = function (c) {
+          if (c === 'track-mode') throw new Error('injected rollback probe');
+          return orig.call(this, c);
+        };
+        __kart.enterTrack();
+        return __kart.mode;
+      })();`);
+      await evalJs(rpc, `if (window.__origClassAdd) document.body.classList.add = window.__origClassAdd; 'ok'`);
+      const rb = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        mode: __kart.mode,
+        active: __kart.sim.drivingActive,
+        hudHidden: document.getElementById('track-hud').classList.contains('hidden'),
+        btn: document.getElementById('btn-track').textContent,
+        errCard: !!document.querySelector('.tm-err'),
+      })`));
+      check('K-A1: enterTrack 半途异常 → 回滚展台（mode/驾驶态/HUD/按钮复位，错误卡可见）',
+        rb.mode === 'showroom' && rb.active === false && rb.hudHidden && rb.btn.includes('上赛道') && rb.errCard,
+        JSON.stringify(rb));
+    }
     await evalJs(rpc, '__kart.enterTrack(); "ok"');
     check('赛道: enterTrack 进入驾驶模式', (await evalJs(rpc, `__kart.mode`)) === 'track');
     check('赛道: 模式菜单可见', await evalJs(rpc, `!document.getElementById('track-menu').classList.contains('hidden')`));
+    {
+      const geo = JSON.parse(await evalJs(rpc, `JSON.stringify((() => {
+        const t = __kart.track;
+        let runs = 0, run = 0, gap = 0;
+        for (const sp of t.samples) {
+          if (Math.abs(sp.k) > 1 / 60) { run++; gap = 0; }
+          else { gap++; if (run > 0 && gap > 6) { if (run >= 8) runs++; run = 0; } }
+        }
+        if (run >= 8) runs++;
+        return { len: t.length, runs, w: t.width };
+      })())`));
+      check('赛道: 复刻周长 ≈858m（宽度锚标定，图注 1200m 不自洽）', geo.len > 772 && geo.len < 944, `len=${geo.len.toFixed(1)}m`);
+      check('赛道: 复刻弯道聚簇 10-14（图面 12 弯）', geo.runs >= 10 && geo.runs <= 14, `runs=${geo.runs}`);
+      check('赛道: 路宽 = 图注均值 12m', geo.w === 12, `w=${geo.w}`);
+    }
     check('赛道: HUD 容器可见', await evalJs(rpc, `!document.getElementById('track-hud').classList.contains('hidden')`));
     // BUG 3 修复断言（先红：基线 .tm-wrap.hidden 无规则 → display:flex 残影层）
     {
@@ -408,6 +447,19 @@ async function main() {
       JSON.stringify(goState));
 
     // 全油门直线（走真实输入通道按住 W）：真实车速上升、位置前进、车轮按地面速度滚
+    // 1:1 复刻赛道白名单改锚：宽度锚标定下最长直道＝底部直道（≈63m，s≈772 起）。
+    // 全油门/方向检查动态定位到"最长直道起点 +2m"，避免与几何硬编码耦合。
+    await evalJs(rpc, `(() => {
+      const T = __kart.track, SS = T.samples, stp = T.length / SS.length;
+      let bstart = 0, run = 0, best = 0, bi = 0;
+      for (let i = 0; i < SS.length; i++) { if (Math.abs(SS[i].k) < 1 / 300) { if (run === 0) bstart = i; run++; if (run > best) { best = run; bi = bstart; } } else run = 0; }
+      const p = T.pointAt((bi + 2) * stp);
+      const d = __kart.driving;
+      d.x = p.x; d.z = p.z; d.yaw = p.yaw;
+      const n = T.nearest(d.x, d.z, -1);
+      d.s = n.s; d.hintIdx = n.idx; d.vx = 0; d.vz = 0;
+      return 'ok';
+    })()`);
     await evalJs(rpc, `__kart.driveKeys.press('up', true); "ok"`);
     const d0 = JSON.parse(await evalJs(rpc, `JSON.stringify({ x: __kart.driving.x, z: __kart.driving.z, v: __kart.driving.speed, w: __kart.sim.wheelOmega })`));
     await pump(120); // 4s 全油门
@@ -438,8 +490,8 @@ async function main() {
         return __kart.drawCalls;
       })()`);
       await evalJs(rpc, `document.getElementById('tg-quality').click(); "ok"`);
-      check('性能: 单车手 draw call 增量 ∈ [3,10]（服/靴/盔/面罩 4 网格）',
-        dcOn - dcOff >= 3 && dcOn - dcOff <= 10, `off=${dcOff} on=${dcOn} Δ=${dcOn - dcOff}`);
+      check('性能: 单车手 draw call 增量 ∈ [3,14]（服红/服深/盔/面罩/盔顶帽 5 网格，含阴影通道）',
+        dcOn - dcOff >= 3 && dcOn - dcOff <= 14, `off=${dcOff} on=${dcOn} Δ=${dcOn - dcOff}`);
     }
 
     // 赛道截图（此时仍在起跑直道上，追逐相机跟车：路面/路肩/轮胎墙/树全入画）
@@ -513,6 +565,12 @@ async function main() {
         const suit = d && d.getObjectByName('driver-suit');
         return !!d && d.visible === true && !!suit && suit.material.color.getHexString() !== 'b61e2c';
       })`));
+    check('K-A10: AI 号码牌按 userData 标记识别（clone(true) 后标记存活且已换队涂装）', await evalJs(rpc,
+      `__kart.race.racers.every((r) => {
+        let ok = false;
+        r.visual.traverse((c) => { if (c.userData?.numberPlate === true && !!c.material?.map) ok = true; });
+        return ok;
+      })`));
     {
       await pump(2);
       const shotRace = await rpc('Page.captureScreenshot', { format: 'png' });
@@ -530,6 +588,8 @@ async function main() {
     })`));
     check('比赛: 玩家冲线出结算面板（race.over + 结果可见 + 菜单收起）',
       fin.over && fin.results && !fin.menu, JSON.stringify(fin));
+    const meRow = await evalJs(rpc, `!!document.querySelector('#tm-results .tm-row.me')`);
+    check('K-A4: 结算含玩家行（buildResults 契约：name/isPlayer/finished/finishTime/lapTimeMs）', meRow === true);
     const menuHit = await evalJs(rpc, `(() => {
       const btn = document.querySelector('#tm-results [data-mode="menu"]');
       if (!btn) return false;
@@ -734,7 +794,8 @@ async function main() {
     await rpc('Emulation.setTouchEmulationEnabled', { enabled: false });
     await pump(5);
 
-    check('控制台零报错', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+    const realErrors = consoleErrors.filter((e) => !e.includes('injected rollback probe')); // K-A1 注入探针的预期日志
+    check('控制台零报错', realErrors.length === 0, realErrors.slice(0, 3).join(' | '));
     close();
   } finally {
     killTree(chrome);

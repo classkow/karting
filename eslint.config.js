@@ -3,7 +3,7 @@ import globals from 'globals';
 
 // ————— ESLint flat config（轻量：只拦真问题，不管代码风格）—————
 export default [
-  { ignores: ['dist/**', 'node_modules/**', '.tmp/**'] },
+  { ignores: ['dist/**', 'node_modules/**', '.tmp/**', 'docs/**'] },
   js.configs.recommended,
   {
     files: ['src/**/*.js'],

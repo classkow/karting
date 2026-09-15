@@ -28,13 +28,16 @@ export function buildBodywork(root, reg) {
   const shell = new THREE.Mesh(noseGeo, M.paintRed);
   shell.rotation.y = -Math.PI / 2;
   nose.add(shell);
-  // 两侧号码牌（贴合收窄后的侧面）
+  // 两侧号码牌（贴合收窄后的侧面）。userData.numberPlate：AI 克隆按此标记替换涂装
+  // （K-A10：旧用几何类型 CircleGeometry 识别，任何圆盘都会被误换；布尔值可 JSON 化，
+  // clone(true) 的 userData JSON 化不损伤该标记——AGENTS.md 已知坑口径）。
   const plateGeo = new THREE.CircleGeometry(0.06, 28);
   const plateTex = numberPlate('88');
   for (const side of [-1, 1]) {
     const plate = new THREE.Mesh(plateGeo, new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.35, metalness: 0.05 }));
     plate.rotation.y = (side * Math.PI) / 2;
     plate.position.set(side * 0.168, 0.148, 0.50);
+    plate.userData.numberPlate = true;
     nose.add(plate);
   }
   root.add(nose);
