@@ -5,6 +5,9 @@ import { updateEngineAudio, disposeEngineAudio, updateDrivingAudio, disposeDrivi
 import { createFpsGuard } from './core/fpsGuard.js';
 import { buildKart } from './kart/builder.js';
 import { createRegistry, systemMeta } from './kart/registry.js';
+import { M } from './kart/materials.js';
+import { PAINT_DEFAULT, paintPreset, applyPaintPreset } from './kart/paintPresets.js';
+import { TIRE_DEFAULT, tireCompound, applyTireCompound } from './kart/tireCompounds.js';
 import { createSim } from './sim/state.js';
 import { solveCycle as solveCycleModel } from './sim/cycle.js';
 import { createTrackModel } from './sim/track.js';
@@ -37,6 +40,10 @@ export function createApp() {
   const prefs = {
     quality: storage.get('kart.quality') !== '0',
     sound: storage.get('kart.sound') === '1',
+    // 涂装/配方偏好（变更 #44）：paintPreset/tireCompound 内置未知 id 回落默认，
+    // 存储被外部污染时仍保证渲染链路拿到合法色值。
+    paint: storage.get('kart.paint') ?? PAINT_DEFAULT,
+    tire: storage.get('kart.tire') ?? TIRE_DEFAULT,
   };
 
   const stage = createStage(canvas);
@@ -59,6 +66,22 @@ export function createApp() {
   const sim = createSim();
   const kart = buildKart(registry);
   scene.add(kart);
+
+  // 涂装/配方恢复：共享材质单例改一处全局生效（所有 paintRed 消费面 / 4 轮 8 侧胎环带）。
+  // AI 队色不受影响：buildAIVisual 克隆 paintRed 后按队色整体覆盖 color。
+  // prefs 归一化到色板/配方内 id（存储污染时 UI 选中态与渲染一致）。
+  const applyPaint = () => {
+    const preset = paintPreset(prefs.paint);
+    prefs.paint = preset.id;
+    applyPaintPreset(M.paintRed, preset);
+  };
+  const applyTire = () => {
+    const compound = tireCompound(prefs.tire);
+    prefs.tire = compound.id;
+    applyTireCompound([M.tireBand], compound);
+  };
+  applyPaint();
+  applyTire();
 
   // ————— 赛道世界（惰性构建，进赛道才生成）—————
   const track = createTrackModel();
@@ -195,6 +218,18 @@ export function createApp() {
       storage.set('kart.sound', prefs.sound ? '1' : '0');
       ctrl.setSoundUI(prefs.sound);
     },
+    onPaint(id) {
+      prefs.paint = id;
+      applyPaint();
+      storage.set('kart.paint', id);
+      ctrl.setPaintUI(id);
+    },
+    onTire(id) {
+      prefs.tire = id;
+      applyTire();
+      storage.set('kart.tire', id);
+      ctrl.setTireUI(id);
+    },
     onReset() {
       rig.applyView('home');
     },
@@ -227,6 +262,8 @@ export function createApp() {
   ctrl.setQualityUI(prefs.quality);
   ctrl.setSoundUI(prefs.sound);
   ctrl.setRotateUI(!reduceMotion);
+  ctrl.setPaintUI(prefs.paint);
+  ctrl.setTireUI(prefs.tire);
 
   const help = initHelp(document.getElementById('help-overlay'));
   document.getElementById('btn-help').addEventListener('click', () => help.toggle());
@@ -830,6 +867,9 @@ export function createApp() {
     get race() { return race; },
     get mode() { return mode; },
     get drawCalls() { return renderer.info.render.calls; }, // 渲染一帧后读取（step(dt,n,true)）
+    // 涂装/轮胎（变更 #44）：冒烟读真实共享材质色验证应用链路（smoke.mjs）
+    paintHex: () => M.paintRed.color.getHexString(),
+    tireHex: () => M.tireBand.color.getHexString(),
     step: (dt = 1 / 60, n = 1, render = false) => {
       for (let i = 0; i < n; i++) frame(dt, dt, render);
     },

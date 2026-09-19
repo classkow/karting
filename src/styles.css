@@ -678,6 +678,81 @@ input[type='range']::-moz-range-thumb {
   transition: width 0.15s linear;
 }
 
+/* ————— 涂装与轮胎面板（变更 #44）————— */
+/* 色板：真实颜色方块（CSS 变量 --sw 注入），选中态描边；不用图片资源 */
+.swatch-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.swatch {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--r-sm);
+  border: 1.5px solid var(--stroke-strong);
+  background: var(--sw);
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+
+.swatch:hover {
+  transform: translateY(-1px);
+  border-color: var(--muted);
+}
+
+.swatch.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.swatch.active::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+}
+
+/* 轮胎配方：色点 + 中文名，选中态同色板口径 */
+.compound-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+
+.cchip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 2px 6px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-sm);
+  font-size: 10.5px;
+  color: var(--muted);
+  transition: all 0.14s;
+}
+
+.cchip i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sw);
+  border: 1px solid var(--stroke-strong);
+}
+
+.cchip:hover {
+  border-color: var(--stroke-strong);
+  color: var(--text);
+}
+
+.cchip.active {
+  border-color: rgba(255, 181, 71, 0.55);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
 /* ————— 演示字幕浮层（画布底部居中，不依赖左右面板；小屏折叠时仍可见）————— */
 
 #demo-caption {

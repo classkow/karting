@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTrackModel } from '../src/sim/track.js';
 import {
-  kerbSpans, curvatureRuns, KERB_RADIUS_GUARD, KERB_CURV_WINDOW, KERB_K_THRESHOLD,
+  kerbSpans, curvatureRuns, KERB_RADIUS_GUARD, KERB_CURV_WINDOW, KERB_K_THRESHOLD, KERB_INNER_EDGE,
 } from '../src/sim/kerbSpans.js';
 
 const track = createTrackModel();
@@ -181,4 +181,72 @@ test('路肩：弯段切分与阈值口径不变（≥12 个 run，最紧弯半�
   let kMax = 0;
   for (const sp of track.samples) kMax = Math.max(kMax, Math.abs(sp.k));
   assert.ok(1 / kMax > 3, `最紧局部半径 ${(1 / kMax).toFixed(2)}m`);
+});
+
+// ————— 变更 #44 任务三：不入侵 / 平滑 / 覆盖不回退（判据数字来自派发方基线取证）—————
+
+// 带体展开为逐样本"内沿/外沿幅值"（内沿 = 近路缘一侧，外沿 = 远路缘一侧）
+function bandMags(spans) {
+  const out = [];
+  for (const span of spans) {
+    for (let j = 0; j < span.len; j++) {
+      const a = Math.abs(span.offA[j]);
+      const b = Math.abs(span.offB[j]);
+      out.push({ i: (span.i0 + j) % S.length, inner: Math.min(a, b), outer: Math.max(a, b) });
+    }
+  }
+  return out;
+}
+
+test('路肩·不入侵：任意带样本内沿 ≥ halfWidth−0.06−0.01（基线 312 点入侵 → 修后 0）', () => {
+  // 0.06 = 设计内嵌 KERB_INNER_EDGE，0.01 = 任务包容差。基线 0338083 实测 312 个采样点
+  // 内沿越过该界（发卡顶点处整条带被 clamp 到 |off|=2.39m，横躺在沥青上）。
+  const limit = track.halfWidth - KERB_INNER_EDGE - 0.01;
+  const bad = [];
+  for (const m of bandMags(kerbSpans(track))) {
+    if (m.inner < limit) bad.push(`i=${m.i} 内沿 ${m.inner.toFixed(2)} < ${limit.toFixed(2)}`);
+  }
+  assert.deepEqual(bad.slice(0, 5), [], `${bad.length} 个带样本内沿入侵路面`);
+});
+
+test('路肩·平滑：任意带相邻采样点外沿变化率 ≤ 0.25 m/m（基线峰值 3.52 → 修后达标）', () => {
+  // 护栏 lim=0.8/|k| 沿弧长台阶式跳变（"不设限"→clamp 一步 7.15→2.39m），基线逐点取
+  // min 使外沿出现断崖，肉眼即锯齿/断带（1m 弧长采样，跳变米数 = 变化率米每米）。
+  const ds = track.length / S.length;
+  let peak = 0;
+  let where = '';
+  const spans = kerbSpans(track);
+  for (const span of spans) {
+    for (let j = 1; j < span.len; j++) {
+      const prev = Math.max(Math.abs(span.offA[j - 1]), Math.abs(span.offB[j - 1]));
+      const cur = Math.max(Math.abs(span.offA[j]), Math.abs(span.offB[j]));
+      const rate = Math.abs(cur - prev) / ds;
+      if (rate > peak) { peak = rate; where = `i0=${span.i0} j=${j} (${prev.toFixed(2)}→${cur.toFixed(2)}m)`; }
+    }
+  }
+  assert.ok(peak <= 0.25, `外沿相邻变化率峰值 ${peak.toFixed(2)} m/m @ ${where}`);
+});
+
+test('路肩·覆盖不回退：总弧长 ≥ 基线 60% 且发卡顶点前后 10m 弧段内两侧均有带外路面带', () => {
+  // 反"全删了事"：基线（0338083）总弧长 = Σ run 长度 ×2 侧 ≈ 875.5m。
+  const spans = kerbSpans(track);
+  const ds = track.length / S.length;
+  const baselineArc = curvatureRuns(track, KERB_K_THRESHOLD).reduce((acc, r) => acc + r.length, 0) * ds;
+  const totalArc = spans.reduce((acc, sp) => acc + sp.len * ds, 0);
+  assert.ok(totalArc >= baselineArc * 0.6,
+    `修后总弧长 ${totalArc.toFixed(0)}m < 基线 ${baselineArc.toFixed(0)}m 的 60%`);
+  // 发卡顶点（未平滑 |k| 最值采样点）前后各 10m 弧段内，必须存在"外路面带"
+  // （内沿 ≥ halfWidth−0.06−0.01 且带宽 > 0）——顶点处允许收窄/消失，但两侧 10m 内要有带。
+  let apex = 0;
+  for (let i = 0; i < S.length; i++) if (kLoc[i] > kLoc[apex]) apex = i;
+  const limit = track.halfWidth - KERB_INNER_EDGE - 0.01;
+  const good = bandMags(spans).filter((m) => m.outer - m.inner > 0 && m.inner >= limit).map((m) => m.i);
+  const hasInWindow = (from, to) => good.some((i) => (i >= from && i <= to));
+  const n = S.length;
+  const backFrom = (apex - Math.ceil(10 / ds) + n) % n;
+  const fwdTo = (apex + Math.ceil(10 / ds)) % n;
+  // 前后窗都不跨起点线回绕时直接判（发卡位于 s≈754m，赛道长 ≈858m，窗口不绕环）
+  assert.ok(backFrom < apex && apex < fwdTo, `窗口跨回绕，需扩展本用例（backFrom=${backFrom} apex=${apex} fwdTo=${fwdTo}）`);
+  assert.ok(hasInWindow(backFrom, apex - 1), `顶点前 10m（i∈[${backFrom},${apex - 1}]）无外路面带`);
+  assert.ok(hasInWindow(apex + 1, fwdTo), `顶点后 10m（i∈[${apex + 1},${fwdTo}]）无外路面带`);
 });

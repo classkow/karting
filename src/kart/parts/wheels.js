@@ -26,6 +26,22 @@ export function buildWheel(r, w, bolts = 3) {
   tire.rotation.z = -Math.PI / 2;
   g.add(tire);
 
+  // 胎侧配方标识环（F1 涂装语言，变更 #44 任务二）：两侧胎壁各一道薄锥形环带，
+  // 母线与胎侧锥面（0.70r@0.42w → 0.90r@0.50w）平行、法向抬升 1.6mm 悬空于胎面之上
+  // ——共面贴合会 Z-fighting，抬升量在 290mm 直径胎侧上肉眼不可辨。
+  // 环带材质 = 共享单例 M.tireBand（4 轮 8 侧改一处全局同步），颜色由 tireCompounds.js
+  // 五配方驱动；纯外观件，不注册部件、不参与机构更新器。
+  const LIFT = 0.0016;
+  for (const sgn of [-1, 1]) {
+    const band = new THREE.Mesh(lathe([
+      [r * 0.725 + LIFT, sgn * w * 0.43],
+      [r * 0.875 + LIFT, sgn * w * 0.49],
+    ], 40), M.tireBand);
+    band.rotation.z = -Math.PI / 2;
+    band.name = 'tire-band';
+    g.add(band);
+  }
+
   // 轮辋桶身（开口 C 形截面，带两侧卷边）
   const rimProfile = [
     [r * 0.64, -w * 0.42],

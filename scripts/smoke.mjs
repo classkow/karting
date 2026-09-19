@@ -322,6 +322,69 @@ async function main() {
       demoReset.steer === 0 && demoReset.throttle === 0 && demoReset.jacking === 0,
       `steer=${demoReset.steer} throttle=${demoReset.throttle} jacking=${demoReset.jacking}`);
 
+    // 4.8 涂装色板 / 轮胎配方（变更 #44）：真实点选通路 → 共享材质色 / 持久化 / 刷新恢复
+    {
+      await evalJs(rpc, `document.querySelector('#paint-chips [data-paint="blue"]').click(); "ok"`);
+      const paint = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        hex: __kart.paintHex(),
+        nose: __kart.getPart('nose').group.children[0].material.color.getHexString(),
+        pod: __kart.getPart('sidepod-l').group.children[0].material.color.getHexString(),
+        pedal: __kart.getPart('pedal-brake').group.children[4].material.color.getHexString(),
+        cal: __kart.getPart('brake-caliper').group.children[0].material.color.getHexString(),
+        fuel: __kart.getPart('fuel-line').group.material.color.getHexString(),
+        suit: __kart.kart.getObjectByName('driver-suit').material.color.getHexString(),
+        cap: __kart.kart.getObjectByName('driver-helmet-cap').material.color.getHexString(),
+        frame: __kart.getPart('frame').group.children[0].material.color.getHexString(),
+      })`));
+      check('展台: 点色板 → paintRed 全消费面同色（罩/侧箱/踏板/卡钳/燃油管/车手服/盔顶）',
+        paint.hex === '1f4fd8' && paint.nose === '1f4fd8' && paint.pod === '1f4fd8'
+          && paint.pedal === '1f4fd8' && paint.cal === '1f4fd8' && paint.fuel === '1f4fd8'
+          && paint.suit === '1f4fd8' && paint.cap === '1f4fd8',
+        JSON.stringify(paint));
+      check('展台: 非漆面材质不随喷漆变色（车架管铬钼钢原色）', paint.frame === 'c9d0d9', `frame=${paint.frame}`);
+      await evalJs(rpc, `document.querySelector('#tire-chips [data-tire="wet"]').click(); "ok"`);
+      const tire = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        hex: __kart.tireHex(),
+        bands: (() => {
+          const out = [];
+          __kart.kart.traverse((o) => { if (o.name === 'tire-band') out.push(o.material.color.getHexString()); });
+          return out;
+        })(),
+        rubber: __kart.getPart('wheel-rr').group.children[0].material.color.getHexString(),
+      })`));
+      check('展台: 切配方 → 前后轮 4 轮 8 侧环带材质同步换色（橡胶本体不动）',
+        tire.hex === '2a6fe0' && tire.bands.length === 8 && tire.bands.every((h) => h === '2a6fe0')
+          && tire.rubber === '17181b',
+        `bands=${tire.bands.length} allBlue=${tire.bands.every((h) => h === '2a6fe0')} rubber=${tire.rubber}`);
+      const persist = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        p: localStorage.getItem('kart.paint'), t: localStorage.getItem('kart.tire'),
+        swActive: document.querySelector('#paint-chips [data-paint="blue"]').classList.contains('active'),
+        swDefaultOff: !document.querySelector('#paint-chips [data-paint="red"]').classList.contains('active'),
+        tcActive: document.querySelector('#tire-chips [data-tire="wet"]').classList.contains('active'),
+      })`));
+      check('展台: 喷漆/配方写入 localStorage 且色板/配方选中态跟随',
+        persist.p === 'blue' && persist.t === 'wet' && persist.swActive && persist.swDefaultOff && persist.tcActive,
+        JSON.stringify(persist));
+      await rpc('Page.navigate', { url: PAGE_URL });
+      await waitFor(() => evalJs(rpc, '!!window.__kart'), '涂装组重启后应用启动');
+      const restored = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        hex: __kart.paintHex(), tire: __kart.tireHex(),
+        paintActive: document.querySelector('#paint-chips [data-paint="blue"]').classList.contains('active'),
+        tireActive: document.querySelector('#tire-chips [data-tire="wet"]').classList.contains('active'),
+      })`));
+      check('展台: 刷新后从 localStorage 恢复喷漆/配方（材质色 + 选中态）',
+        restored.hex === '1f4fd8' && restored.tire === '2a6fe0' && restored.paintActive === true && restored.tireActive === true,
+        JSON.stringify(restored));
+      // 还原默认（红漆 + 中性胎），后续分组截图保持基线观感
+      await evalJs(rpc, `(() => {
+        document.querySelector('#paint-chips [data-paint="red"]').click();
+        document.querySelector('#tire-chips [data-tire="medium"]').click();
+        return "ok";
+      })()`);
+      const backToDefault = await evalJs(rpc, `__kart.paintHex() === 'b61e2c' && __kart.tireHex() === 'f2c12e'`);
+      check('展台: 选回默认漆/配方即还原（红漆 b61e2c + 中性黄 f2c12e）', backToDefault === true);
+    }
+
     // 5. 装配态截图（整车 / 传动特写）
     async function shot(name, camPos, camTgt) {
       await evalJs(rpc, `(() => {

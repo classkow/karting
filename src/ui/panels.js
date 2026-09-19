@@ -1,5 +1,7 @@
 import { RACE_CONFIG } from '../sim/race.js'; // 比赛圈数/对手数文案单源（K-A12）
 import { SYSTEMS, systemMeta } from '../kart/registry.js';
+import { PAINT_PRESETS } from '../kart/paintPresets.js';
+import { TIRE_COMPOUNDS } from '../kart/tireCompounds.js';
 import { VIEWS } from '../interaction/views.js';
 import { CLUTCH_ENGAGE_RPM } from '../sim/state.js';
 import * as cycle from '../sim/cycle.js';
@@ -295,6 +297,20 @@ export function initControlPanel(container, api) {
       <button id="btn-reset" class="ghost wide">${icon('home', 13)}视角复位</button>
     </div>
 
+    <div class="panel-head">${icon('layers', 15)}涂装与轮胎</div>
+    <div class="ctl-block">
+      <div class="swatch-row" id="paint-chips" role="group" aria-label="车漆色板">
+        ${PAINT_PRESETS.map((p) =>
+          `<button class="swatch" data-paint="${p.id}" style="--sw:${p.hex}" title="${p.name}" aria-label="${p.name}"></button>`
+        ).join('')}
+      </div>
+      <div class="compound-row" id="tire-chips" role="group" aria-label="轮胎配方">
+        ${TIRE_COMPOUNDS.map((c) =>
+          `<button class="cchip" data-tire="${c.id}" title="${c.name}"><i style="--sw:${c.hex}"></i><span>${c.name}</span></button>`
+        ).join('')}
+      </div>
+    </div>
+
     <div class="panel-head">${icon('spark', 15)}演示</div>
     <div class="ctl-block demo-block">
       <div class="demo-chips" id="demo-chips">
@@ -362,6 +378,15 @@ export function initControlPanel(container, api) {
     if (!btn) return;
     container.querySelectorAll('.vchip').forEach((b) => b.classList.toggle('active', b === btn));
     api.onView(btn.dataset.view);
+  });
+  // 涂装/配方选择：面板只管高亮回写（setPaintUI/setTireUI），改材质与持久化在 app 回调
+  $('#paint-chips').addEventListener('click', (e) => {
+    const btn = e.target.closest('.swatch');
+    if (btn) api.onPaint?.(btn.dataset.paint);
+  });
+  $('#tire-chips').addEventListener('click', (e) => {
+    const btn = e.target.closest('.cchip');
+    if (btn) api.onTire?.(btn.dataset.tire);
   });
 
   function setEngineUI(on, cranking) {
@@ -431,6 +456,13 @@ export function initControlPanel(container, api) {
     setSoundUI(on) {
       tgSound.classList.toggle('on', on);
       tgSound.innerHTML = `${icon(on ? 'volume' : 'volume-off', 13)}<span>音效</span>`;
+    },
+    // 涂装色板/轮胎配方选中态（启动恢复与点选回写共用；app 是唯一状态源）
+    setPaintUI(id) {
+      container.querySelectorAll('#paint-chips .swatch').forEach((b) => b.classList.toggle('active', b.dataset.paint === id));
+    },
+    setTireUI(id) {
+      container.querySelectorAll('#tire-chips .cchip').forEach((b) => b.classList.toggle('active', b.dataset.tire === id));
     },
     setJackingUI(on, scale) {
       tgJacking.classList.toggle('on', on);

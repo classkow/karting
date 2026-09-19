@@ -35,10 +35,15 @@ export const M = {
   zinc: new THREE.MeshPhysicalMaterial({ color: 0xb9903e, metalness: 0.95, roughness: 0.34, envMapIntensity: 1.0 }),
   // 链条钢（微暗，与链轮区分）
   chainSteel: new THREE.MeshPhysicalMaterial({ color: 0x878c93, metalness: 1.0, roughness: 0.42, envMapIntensity: 0.9 }),
-  // 赛车红车漆（透明罩光）
+  // 赛车红车漆（透明罩光）——喷漆色板的唯一写入目标（kart/paintPresets.js apply 只改本实例 color）
   paintRed: new THREE.MeshPhysicalMaterial({
     color: 0xb61e2c, metalness: 0.12, roughness: 0.32,
     clearcoat: 1.0, clearcoatRoughness: 0.06, envMapIntensity: 1.0,
+  }),
+  // 胎侧配方标识环（F1 涂装语言；色 = kart/tireCompounds.js 五配方，共享单例全局同步）
+  tireBand: new THREE.MeshPhysicalMaterial({
+    color: 0xf2c12e, metalness: 0.05, roughness: 0.55,
+    clearcoat: 0.35, clearcoatRoughness: 0.4, side: THREE.DoubleSide,
   }),
   // 哑光工程塑料（黑色护杠）
   plastic: new THREE.MeshPhysicalMaterial({
