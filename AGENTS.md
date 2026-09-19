@@ -126,6 +126,13 @@ missions/             Git-ignored task packets and delivery notes (workflow arti
   `steering.test.js` (input-direction contract) and `touchInput.test.js`.
   The suites run through the explicit list in `package.json` — appending a
   new file to that list is part of adding the file.
+- `tests/kartParts.test.js` is the exception to "pure math only": it assembles
+  real kart parts (seat shell material identity, tyre-band envelope) and needs
+  a DOM for `materials.js`'s canvas texture factory. `tests/helpers/canvasStub.js`
+  installs a minimal `globalThis.document` and must be imported **before**
+  `materials.js` (ESM evaluates imports in source order). Keep it that way
+  rather than duplicating constants — the point of the suite is that it reads
+  production geometry, not a copy of it.
 - Physics assertions anchor to **explainable physical intervals** (e.g.
   brake deceleration under rear-axle adhesion ≤0.78g, top speed within the
   torque-curve window), not snapshot numbers. When adding a test, derive the
@@ -195,6 +202,21 @@ missions/             Git-ignored task packets and delivery notes (workflow arti
   it leaves the offset band folding past the centre of curvature (measured: 465
   coplanar triangle pairs, i.e. the high-frequency Z-fighting the user reported).
   Unsmoothed ±3 m curvature → 0 pairs. Do not "simplify" back to fixed offsets.
+- **A tyre sidewall ring must be lifted along the shoulder's outward normal, not
+  radially.** `src/kart/parts/wheels.js` derives the compound band from the same
+  `PROFILE` points as the tyre body and offsets it by `BAND_LIFT · r` along that
+  segment's normal. Offsetting only in radius (the shipped #44 bug) moves the ring
+  *under* the sidewall cone, because that cone's radius grows with |axial| — the
+  scene graph still looked perfect (8 meshes, right colours, visible chain intact)
+  while all 8 bands sat 31 mm inside the rubber, invisible from every angle.
+  Guarded by `tests/kartParts.test.js` (envelope read off real lathe vertices) and
+  the smoke's emissive-occlusion probe at the default showroom camera.
+- **Paint consumers are defined by sharing `M.paintRed`, and grepping material
+  *names* cannot audit that list.** The seat shell used a separate GRP instance,
+  so "spray paint" left the seat unpainted (and would have made AI seats follow
+  the player's colour). New painted surfaces must take the shared instance; the
+  smoke enumerates every consumption face by part, which is the only audit that
+  holds.
 - **Replica track data is generated, never hand-edited.** `docs/build_track.mjs`
   (git-ignored) writes `docs/trackData.gen.js` + `docs/trackBoundary.gen.js`,
   which are copied byte-for-byte onto `src/sim/trackData.js` / `trackBoundary.js`.

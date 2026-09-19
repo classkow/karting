@@ -7,36 +7,51 @@ import { L } from '../layout.js';
 // 轮组局部坐标：轴线沿 x，自旋即 group.rotation.x。
 // buildWheel 同时被 wheels.js（后轮）与 steering.js（前轮）复用。
 
+// 胎体母线（[半径, 轴向]，均为 r / w 的分数；绕轴旋成回转体）。索引 6→7 是胎肩弧段
+// （胎面边缘 → 胎侧最外缘），配方标识环贴着它走——两处共用同一份数据，尺寸不会各自漂移。
+const PROFILE = [
+  [0.70, -0.42], [0.90, -0.50], [0.985, -0.38], [1.0, -0.16], [0.995, 0],
+  [1.0, 0.16], [0.985, 0.38], [0.90, 0.50], [0.70, 0.42],
+];
+const SHOULDER = [6, 7];
+const BAND_LIFT = 0.022; // 外法向抬升量（× 轮胎半径）：后轮 3.2mm / 前轮 2.9mm
+const BAND_T = [0.10, 0.80]; // 取胎肩弧段中段，两端分别避开胎面冠与胎侧最外缘
+
+// 环带母线：胎肩弧段整体沿其真实外法向平移 BAND_LIFT·r。
+// 旧实现只把半径 +1.6mm——胎侧锥面的半径随 |轴向| 单调增大，纯径向偏移等于把环带
+// 往胎侧内侧挪（实测陷进胎体 31mm），8 条环带被不透明胎体完全包住（变更 #44 缺陷二）。
+// 沿外法向抬升后，同一轴向处环带半径比胎体外包容半径大 (n_r + |slope|·n_z)·LIFT ≈ 1.12·LIFT，
+// 且不越胎面冠径 / 不越胎体名义宽度——名义半径与名义宽度仍是轮胎尺寸的唯一来源。
+function bandProfile(r, w, sgn) {
+  const [ra, za] = PROFILE[SHOULDER[0]];
+  const [rb, zb] = PROFILE[SHOULDER[1]];
+  const ar = ra * r;
+  const az = za * w;
+  const dr = rb * r - ar;
+  const dz = zb * w - az;
+  const len = Math.hypot(dr, dz);
+  const nr = dz / len; // (半径, |轴向|) 平面内指向胎体外侧的单位法向
+  const nz = -dr / len;
+  const lift = BAND_LIFT * r;
+  return BAND_T.map((t) => [ar + dr * t + nr * lift, sgn * (az + dz * t + nz * lift)]);
+}
+
 export function buildWheel(r, w, bolts = 3) {
   const g = new THREE.Group();
 
   // 轮胎：圆肩弧胎冠（比赛用光头胎）
-  const tireProfile = [
-    [r * 0.70, -w * 0.42],
-    [r * 0.90, -w * 0.50],
-    [r * 0.985, -w * 0.38],
-    [r, -w * 0.16],
-    [r * 0.995, 0],
-    [r, w * 0.16],
-    [r * 0.985, w * 0.38],
-    [r * 0.90, w * 0.50],
-    [r * 0.70, w * 0.42],
-  ];
+  const tireProfile = PROFILE.map(([fr, fz]) => [fr * r, fz * w]);
   const tire = new THREE.Mesh(lathe(tireProfile, 56), M.rubber);
+  tire.name = 'tire-body';
   tire.rotation.z = -Math.PI / 2;
   g.add(tire);
 
-  // 胎侧配方标识环（F1 涂装语言，变更 #44 任务二）：两侧胎壁各一道薄锥形环带，
-  // 母线与胎侧锥面（0.70r@0.42w → 0.90r@0.50w）平行、法向抬升 1.6mm 悬空于胎面之上
-  // ——共面贴合会 Z-fighting，抬升量在 290mm 直径胎侧上肉眼不可辨。
+  // 胎侧配方标识环（F1 涂装语言，变更 #44 任务二）：两侧胎肩各一道锥形环带，悬空于胎体轮廓之外
+  // ——共面贴合会 Z-fighting，抬升量在 290mm 直径胎肩上仍属肉眼"贴着胎面"的量级。
   // 环带材质 = 共享单例 M.tireBand（4 轮 8 侧改一处全局同步），颜色由 tireCompounds.js
-  // 五配方驱动；纯外观件，不注册部件、不参与机构更新器。
-  const LIFT = 0.0016;
+  // 五配方驱动；纯外观件，不注册部件、不参与机构更新器。回转面对称 ⇒ 随轮自旋观感恒定。
   for (const sgn of [-1, 1]) {
-    const band = new THREE.Mesh(lathe([
-      [r * 0.725 + LIFT, sgn * w * 0.43],
-      [r * 0.875 + LIFT, sgn * w * 0.49],
-    ], 40), M.tireBand);
+    const band = new THREE.Mesh(lathe(bandProfile(r, w, sgn), 40), M.tireBand);
     band.rotation.z = -Math.PI / 2;
     band.name = 'tire-band';
     g.add(band);

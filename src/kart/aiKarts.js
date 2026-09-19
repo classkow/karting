@@ -9,6 +9,8 @@ import { updateDriverHead } from './parts/driver.js';
 // 机构动画（活塞/链条等）在克隆上静止——追逐视角下不可察，换来的代价是零 registry 风险。
 // 车手随 clone(true) 自带（赛道态克隆时玩家车 driver 可见）：赛车服走 paintRed
 // 引用替换自动换本队涂装，头盔/靴/面罩共享材质；头部微动经 driver-head 命名查找。
+// 座椅壳同样挂在 paintRed 上（变更 #44 返工：喷漆消费面），故本队涂装一并覆盖座椅——
+// 车漆单例只此一处引用替换，不需要为座椅再加第二套隔离逻辑。
 
 const _euler = new THREE.Euler();
 

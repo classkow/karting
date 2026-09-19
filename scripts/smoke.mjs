@@ -334,13 +334,17 @@ async function main() {
         fuel: __kart.getPart('fuel-line').group.material.color.getHexString(),
         suit: __kart.kart.getObjectByName('driver-suit').material.color.getHexString(),
         cap: __kart.kart.getObjectByName('driver-helmet-cap').material.color.getHexString(),
+        seat: __kart.getPart('seat').group.getObjectByName('seat-shell').material.color.getHexString(),
+        pad: __kart.getPart('seat').group.children[1].material.color.getHexString(),
         frame: __kart.getPart('frame').group.children[0].material.color.getHexString(),
       })`));
-      check('展台: 点色板 → paintRed 全消费面同色（罩/侧箱/踏板/卡钳/燃油管/车手服/盔顶）',
+      check('展台: 点色板 → paintRed 全消费面同色（罩/侧箱/踏板/卡钳/燃油管/车手服/盔顶/座椅壳）',
         paint.hex === '1f4fd8' && paint.nose === '1f4fd8' && paint.pod === '1f4fd8'
           && paint.pedal === '1f4fd8' && paint.cal === '1f4fd8' && paint.fuel === '1f4fd8'
-          && paint.suit === '1f4fd8' && paint.cap === '1f4fd8',
+          && paint.suit === '1f4fd8' && paint.cap === '1f4fd8' && paint.seat === '1f4fd8',
         JSON.stringify(paint));
+      // 变更 #44 缺陷一：座椅壳曾独用玻璃钢材质实例，脱离喷漆链路（只喷了车厢没喷座位）
+      check('展台: 座椅织物件不喷漆（坐垫/靠背软垫保持织物色 1d2024）', paint.pad === '1d2024', `pad=${paint.pad}`);
       check('展台: 非漆面材质不随喷漆变色（车架管铬钼钢原色）', paint.frame === 'c9d0d9', `frame=${paint.frame}`);
       await evalJs(rpc, `document.querySelector('#tire-chips [data-tire="wet"]').click(); "ok"`);
       const tire = JSON.parse(await evalJs(rpc, `JSON.stringify({
@@ -369,11 +373,13 @@ async function main() {
       await waitFor(() => evalJs(rpc, '!!window.__kart'), '涂装组重启后应用启动');
       const restored = JSON.parse(await evalJs(rpc, `JSON.stringify({
         hex: __kart.paintHex(), tire: __kart.tireHex(),
+        seat: __kart.getPart('seat').group.getObjectByName('seat-shell').material.color.getHexString(),
         paintActive: document.querySelector('#paint-chips [data-paint="blue"]').classList.contains('active'),
         tireActive: document.querySelector('#tire-chips [data-tire="wet"]').classList.contains('active'),
       })`));
-      check('展台: 刷新后从 localStorage 恢复喷漆/配方（材质色 + 选中态）',
-        restored.hex === '1f4fd8' && restored.tire === '2a6fe0' && restored.paintActive === true && restored.tireActive === true,
+      check('展台: 刷新后从 localStorage 恢复喷漆/配方（材质色 + 选中态，含座椅壳）',
+        restored.hex === '1f4fd8' && restored.tire === '2a6fe0' && restored.seat === '1f4fd8'
+          && restored.paintActive === true && restored.tireActive === true,
         JSON.stringify(restored));
       // 还原默认（红漆 + 中性胎），后续分组截图保持基线观感
       await evalJs(rpc, `(() => {
@@ -405,6 +411,136 @@ async function main() {
     await evalJs(rpc, `__kart.getPart('sidepod-r').group.visible = false; "ok"`);
     await shot('04-engine.png', [0.82, 0.62, 0.55], [0.33, 0.16, -0.16]);
     await evalJs(rpc, `__kart.getPart('sidepod-r').group.visible = true; "ok"`);
+
+    // 5.1 胎侧环带渲染级可见性（变更 #44 返工·缺陷二）
+    // 机位刻意停在 01-overview 的默认整车视角（VIEWS.home）：验收口径是"常规视角肉眼可辨"，
+    // 不接受贴脸特写机位，也不接受场景图数据自证——所以本组全部判定都在这一帧画幅上逐像素做。
+    {
+      await evalJs(rpc, `(() => {
+        __kart.controls.autoRotate = false; // 自动环绕会让帧间漂移，判定需要同一机位
+        __kart.camera.position.set(2.7, 1.15, 2.75);
+        __kart.controls.target.set(0, 0.28, 0);
+        __kart.controls.update();
+        return "ok";
+      })()`);
+      const homeCam = JSON.parse(await evalJs(rpc, `JSON.stringify({
+        pos: __kart.camera.position.toArray().map((v) => +v.toFixed(2)),
+        tgt: __kart.controls.target.toArray().map((v) => +v.toFixed(2)),
+      })`));
+      check('环带可见性: 判定机位 = 默认整车视角 VIEWS.home（非特写）',
+        homeCam.pos.join(',') === '2.7,1.15,2.75' && homeCam.tgt.join(',') === '0,0.28,0',
+        JSON.stringify(homeCam));
+
+      const band = JSON.parse(await evalJs(rpc, `(() => {
+        const gl = document.getElementById('scene');
+        const scratch = document.createElement('canvas');
+        const sctx = scratch.getContext('2d', { willReadFrequently: true });
+        const shoot = () => {
+          // 渲染与回读必须在同一 JS 任务里：画布没开 preserveDrawingBuffer，
+          // 合帧之后缓冲区就被清，drawImage 会拿到空图。
+          __kart.step(1 / 30, 1, true);
+          scratch.width = gl.width;
+          scratch.height = gl.height;
+          sctx.drawImage(gl, 0, 0);
+          return sctx.getImageData(0, 0, gl.width, gl.height).data;
+        };
+        const bands = [];
+        const tires = [];
+        __kart.kart.traverse((o) => {
+          if (o.name === 'tire-band') bands.push(o);
+          else if (o.name === 'tire-body') tires.push(o);
+        });
+        const mats = [...new Set(bands.map((o) => o.material))];
+        const out = { bands: bands.length, tires: tires.length, mats: mats.length, canvas: gl.width + 'x' + gl.height };
+        const wheels = ['wheel-fl', 'wheel-fr', 'wheel-rl', 'wheel-rr'].map((id) => __kart.getPart(id).group);
+        const spin0 = wheels.map((g) => g.rotation.x);
+        const emissive0 = mats.map((m) => [m.emissive.getHex(), m.emissiveIntensity]);
+        // 品红自发光探针（差分版）：同机位连渲两帧，只切换环带 emissive，统计"变得更品红"的像素。
+        // 用差分而非绝对色阈：环带底色（配方黄）本身就带大量绿通道，绝对判据会把亮胎侧漏掉；
+        // 自发光不受光照影响，差分仍为零即证明该态下环带一个像素都没画出来 = 被深度遮挡。
+        const probeMagenta = () => {
+          for (const m of mats) m.emissive.setRGB(0, 0, 0);
+          const off = shoot();
+          for (const m of mats) m.emissive.setRGB(1, 0, 1);
+          const on = shoot();
+          let n = 0;
+          for (let i = 0; i < on.length; i += 4) {
+            const gain = (Math.min(on[i], on[i + 2]) - on[i + 1]) - (Math.min(off[i], off[i + 2]) - off[i + 1]);
+            if (gain > 20) n++;
+          }
+          return n;
+        };
+        try {
+          for (const m of mats) m.emissiveIntensity = 2.0;
+          out.emMasked = probeMagenta(); // 装配态：胎体还在，只有不被挡的一侧能被看到
+          for (const t of tires) t.visible = false;
+          out.emExposed = probeMagenta(); // 隐去 4 个胎体：8 条环带全暴露（分母）
+          for (const t of tires) t.visible = true;
+          for (const b of bands) b.visible = false;
+          out.emBlank = probeMagenta(); // 隐去环带：对照零点
+          for (const b of bands) b.visible = true;
+          out.emSpin = []; // 滚转角 0/90/180/270°：环带是回转面，可见量必须与转角无关
+          for (let k = 0; k < 4; k++) {
+            for (const g of wheels) g.rotation.x = (k * Math.PI) / 2;
+            out.emSpin.push(probeMagenta());
+          }
+        } finally {
+          mats.forEach((m, i) => { m.emissive.setHex(emissive0[i][0]); m.emissiveIntensity = emissive0[i][1]; });
+          wheels.forEach((g, i) => { g.rotation.x = spin0[i]; });
+          for (const t of tires) t.visible = true;
+          for (const b of bands) b.visible = true;
+        }
+        // 真实着色（自发光已还原）：换配方前后逐像素比较——报障原话是"轮胎没看到颜色变化"
+        const pick = (id) => document.querySelector('#tire-chips [data-tire="' + id + '"]').click();
+        const diff = (a, b) => {
+          let n = 0;
+          for (let i = 0; i < a.length; i += 4) {
+            if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 24) n++;
+          }
+          return n;
+        };
+        try {
+          pick('soft');
+          const soft = shoot();
+          pick('hard');
+          const hard = shoot();
+          for (const b of bands) b.visible = false;
+          const bare = shoot(); // 与 hard 同态、只隐去环带 ⇒ 差值即环带占据的可见像素
+          for (const b of bands) b.visible = true;
+          out.pxSoft = diff(soft, bare);
+          out.pxBare = diff(hard, bare);
+          out.pxSwap = diff(soft, hard); // 软↔硬真正改色的像素（配方切换的可感知证据）
+        } finally {
+          for (const b of bands) b.visible = true;
+          pick('medium'); // 还原默认中性胎，别把配方状态污染留给后续分组
+          shoot();
+        }
+        return JSON.stringify(out);
+      })()`));
+      check('环带可见性: 4 轮 8 侧环带 + 4 个胎体在场景图内，环带材质为共享单例',
+        band.bands === 8 && band.tires === 4 && band.mats === 1, JSON.stringify(band));
+      // 零点容 5px：描边/边缘抗锯齿通道会把极个别像素染成品红倾向，单条环带 ≈2000px，
+      // 5px 渗漏 <0.3%，既守住"品红只可能来自环带"，又不被 AA 噪声误报。
+      check('环带可见性: 探针对照零点（隐去环带后差分像素 ≤5）',
+        band.emBlank <= 5, `emBlank=${band.emBlank} canvas=${band.canvas}`);
+      // 像素地板的推导：单条环带投影 ≈ 周长 2π·140mm ÷ 2.86mm/px ≈ 300px 长 × 带宽 19mm ÷ 2.86 ≈ 7px
+      // ⇒ ≈ 2000px/条。全暴露 8 条 ⇒ 理论 1.6 万 px，地板取 1/8（2000）；装配态只有朝相机的 4 条
+      // 不被本侧胎体挡 ⇒ 理论 8000px，地板取 1/4（2000）并要求 ≥35% 全暴露量（缺陷态实测 0）。
+      check('环带可见性: 隐去胎体后环带可被渲染（管线完好，缺陷只在几何遮挡）',
+        band.emExposed >= 2000, `emExposed=${band.emExposed}`);
+      check('环带可见性: 默认整车视角装配态可见 ≥ 35% 全暴露量（未被胎体深度遮挡）',
+        band.emExposed > 0 && band.emMasked >= 0.35 * band.emExposed && band.emMasked >= 2000,
+        `masked=${band.emMasked} exposed=${band.emExposed} 比例=${band.emExposed ? (band.emMasked / band.emExposed).toFixed(2) : 'n/a'}`);
+      check('环带可见性: 随轮自旋 4 个滚转角可见像素恒定（回转面对称，非单角度可见）',
+        band.emSpin.every((n) => n >= 0.9 * band.emMasked), JSON.stringify(band.emSpin));
+      // 单条环带投影面积量级：周长 2π·0.14m × 带宽 0.019m ≈ 0.017㎡；home 机位 900px 高
+      // 对应 3.9m 处 2.86mm/px ⇒ ≈ 2000px/条，4 条朝向相机的胎侧合计数千 px。
+      // 阈值取 800px（约 1/3 条环带）做地板，缺陷态实测 0px。
+      check('环带可见性: 真实着色下换配方可逐像素看到胎侧改色（软红↔硬白 ≥800px/态）',
+        band.pxSoft >= 800 && band.pxBare >= 800 && band.pxSwap >= 800,
+        JSON.stringify({ pxSoft: band.pxSoft, pxBare: band.pxBare, pxSwap: band.pxSwap }));
+      await shot('08-tire-band-home.png', [2.7, 1.15, 2.75], [0, 0.28, 0]);
+    }
 
     // 6. 爆炸分解（截图放最后，避免污染装配态画面）
     await evalJs(rpc, '__kart.explode.setTarget(1); "ok"');

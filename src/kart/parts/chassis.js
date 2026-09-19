@@ -77,7 +77,10 @@ export function buildChassis(root, reg) {
   const shellGeo = new THREE.ExtrudeGeometry(s, { depth: 0.30, bevelEnabled: true, bevelThickness: 0.022, bevelSize: 0.022, bevelSegments: 3, curveSegments: 14 });
   shellGeo.rotateY(-Math.PI / 2);
   shellGeo.translate(0.15, 0, 0); // 拉伸沿 -x 偏一侧,平移回车宽居中
-  const shell = new THREE.Mesh(shellGeo, M.grp);
+  // 壳体是喷漆消费面：与整流罩/侧箱共用 M.paintRed 单例，色板改一处即全车同步；
+  // 另立材质实例（原玻璃钢红 #a81e2a）会让座椅脱离喷漆链路，AI 车座椅也会跟玩家车一起变色。
+  const shell = new THREE.Mesh(shellGeo, M.paintRed);
+  shell.name = 'seat-shell';
   seat.add(shell);
   // 坐垫与靠背软垫:位置/倾角按壳体内表面实测拟合(射线扫描),零穿模
   const cush = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.035, 0.19, 3, 0.014), M.fabric);
