@@ -20,7 +20,9 @@ export function buildAIVisual(playerKart, { color, number }) {
   const paint = M.paintRed.clone();
   paint.color = new THREE.Color(color);
   paint.userData.aiOwned = true; // 克隆独有材质打标（移除时只释放这些，共享材质不动）
-  // 号码牌：车身上的圆形贴图网格
+  // 号码牌判据 = 装配处埋的 userData.numberPlate 标记（bodywork.js）。
+  // 旧判据 geometry.type==='CircleGeometry' 会把任何圆盘（未来的油箱盖/垫圈）都贴上号码牌；
+  // 标记是布尔值，经 clone(true) 的 userData JSON 化不丢失（AGENTS.md 已知坑口径）。
   const plateMat = new THREE.MeshStandardMaterial({
     map: numberPlate(number), roughness: 0.35, metalness: 0.05,
   });
@@ -29,7 +31,7 @@ export function buildAIVisual(playerKart, { color, number }) {
   clone.traverse((o) => {
     if (!o.isMesh) return;
     if (o.material === M.paintRed) o.material = paint;
-    else if (o.geometry?.type === 'CircleGeometry') o.material = plateMat;
+    else if (o.userData?.numberPlate) o.material = plateMat;
   });
   return clone;
 }
@@ -47,17 +49,19 @@ export function createAIVisualAnimator(clone) {
     }
   });
   return {
-    update(st, shell) {
+    // dt = 本帧时长（秒）。轮角是 ∫ω·dt 的累加，ω 单位 rad/s——少乘 dt 就等于把角速度
+    // 放大 1/dt 倍（60fps 下 60 倍），同一场比赛在 120Hz 手机与 60Hz 桌面轮速观感差一倍。
+    update(st, shell, dt = 0) {
       clone.position.set(st.x, 0, st.z);
       clone.rotation.y = st.yaw;
       _euler.set(-st.pitch, 0, -st.roll);
       sprung.quaternion.setFromEuler(_euler);
       sprung.position.y = st.heave ?? 0;
       // 后轮随地面速度滚（shell.wheelOmega 由 stepDriving 写入），前轮半径不同另计
-      const wRear = shell?.wheelOmega ?? 0;
+      const wRear = (shell?.wheelOmega ?? 0) * dt;
       if (wheels['wheel-rl']) wheels['wheel-rl'].rotation.x += wRear;
       if (wheels['wheel-rr']) wheels['wheel-rr'].rotation.x += wRear;
-      const wFront = st.wheelOmegaF ?? 0;
+      const wFront = (st.wheelOmegaF ?? 0) * dt;
       if (wheels['wheel-fl']) {
         wheels['wheel-fl'].rotation.x += wFront;
         wheels['wheel-fl'].rotation.y = shell?.steerAngleL ?? 0;

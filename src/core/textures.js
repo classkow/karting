@@ -267,7 +267,9 @@ export function grassMap() {
     ctx.fillStyle = Math.random() > 0.5 ? `rgba(120,148,80,${a})` : `rgba(30,40,18,${a})`;
     ctx.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 3, 1 + Math.random() * 3);
   }
-  _grass = toTexture(c, { srgb: true });
+  // 平铺倍数与 wrap 必须同源决定（toTexture 里成对设置）：直径 800m 的大地面上一张 256²
+  // 噪声贴图若不重复，5200 笔噪点被拉成几十米的大斑块，肉眼读作一整块脏色。
+  _grass = toTexture(c, { srgb: true, repeat: [150, 150] });
   return _grass;
 }
 

@@ -5,9 +5,15 @@ import * as THREE from 'three';
 import { M } from '../src/kart/materials.js';
 import { createRegistry } from '../src/kart/registry.js';
 import { buildChassis } from '../src/kart/parts/chassis.js';
+import { buildBodywork } from '../src/kart/parts/bodywork.js';
+import { buildSteering } from '../src/kart/parts/steering.js';
 import { buildWheel } from '../src/kart/parts/wheels.js';
+import { buildAIVisual } from '../src/kart/aiKarts.js';
 import { L } from '../src/kart/layout.js';
 import { PAINT_DEFAULT, PAINT_PRESETS, paintPreset, applyPaintPreset } from '../src/kart/paintPresets.js';
+import * as TEX from '../src/core/textures.js';
+import { createTrackModel } from '../src/sim/track.js';
+import { buildTrackScene } from '../src/core/trackScene.js';
 
 // ————— 装配级不变量（变更 #44 返工：座椅喷漆 + 胎侧环带可见性）—————
 // 本套件在 node 里装配真实部件（tests/helpers/canvasStub.js 补最小 DOM），
@@ -119,4 +125,106 @@ test('胎侧环带·整条母线抬到胎体外包络之外，且不越胎体名
     }
     assert.equal(checked, 4, `${label}两侧共 4 条母线待验`);
   }
+});
+
+test('贴图工厂不变量：平铺次数 ≠ 1 的贴图必须是 RepeatWrapping', () => {
+  // ClampToEdge 把 [0,1] 之外的 UV 钉在边缘像素上：平铺倍数写多少都没用，
+  // 整张贴被拉成一条边缘色——程序化贴图的细节全部丢失（草地 5200 笔噪声等于没画）。
+  // 事后在消费方 repeat.set(...) 是这种错的第二半：工厂出厂 wrap 与 repeat 必须同源决定。
+  const shipped = [
+    ['tireNormal', TEX.tireNormal()],
+    ['brushedRoughness', TEX.brushedRoughness()],
+    ['carbon', TEX.carbon()],
+    ['platformMap', TEX.platformMap()],
+    ['floorRoughness', TEX.floorRoughness()],
+    ['backdrop', TEX.backdrop()],
+    ['numberPlate', TEX.numberPlate('88')],
+    ['asphaltMap', TEX.asphaltMap()],
+    ['grassMap', TEX.grassMap()],
+    ['kerbMap', TEX.kerbMap()],
+    ['checkerMap', TEX.checkerMap()],
+    ['skyMap', TEX.skyMap()],
+    ['bannerMap', TEX.bannerMap()],
+  ];
+  for (const [name, t] of shipped) {
+    if (t.repeat.x === 1 && t.repeat.y === 1) continue; // 不平铺 ⇒ ClampToEdge 合法
+    assert.equal(t.wrapS, THREE.RepeatWrapping, `${name} 平铺 x=${t.repeat.x} 但 wrapS=${t.wrapS}`);
+    assert.equal(t.wrapT, THREE.RepeatWrapping, `${name} 平铺 y=${t.repeat.y} 但 wrapT=${t.wrapT}`);
+  }
+});
+
+test('草地平铺单点化：赛道世界消费到的草地贴图既在平铺、wrap 也允许平铺', () => {
+  // 判据取自真实消费态（buildTrackScene 之后），不是工厂出厂值：
+  // 基线的平铺写在 trackScene 的事后 repeat.set(150,150) 里，工厂 wrapS 仍是 ClampToEdge。
+  const world = buildTrackScene(createTrackModel());
+  const grass = TEX.grassMap();
+  const users = [];
+  world.traverse((o) => { if (o.isMesh && o.material?.map === grass) users.push(o); });
+  assert.equal(users.length, 1, '草地贴图应只被大地面消费一个网格');
+  const [disc] = users;
+  const D = 2 * disc.geometry.parameters.radius; // 大地面直径（米）
+  assert.ok(grass.repeat.x > 1 && grass.repeat.y > 1,
+    `草地贴图未被平铺（repeat=${grass.repeat.x}×${grass.repeat.y}）`);
+  assert.equal(grass.wrapS, THREE.RepeatWrapping,
+    `草地已平铺 x${grass.repeat.x} 但 wrapS=${grass.wrapS}：平铺被 ClampToEdge 吞掉`);
+  assert.equal(grass.wrapT, THREE.RepeatWrapping,
+    `草地已平铺 y${grass.repeat.y} 但 wrapT=${grass.wrapT}：平铺被 ClampToEdge 吞掉`);
+  // 平铺周期上界 8m：贴图 256²、噪声团 1~4px，周期 8m 时一个噪点 ≈3~12cm（草叶量级）；
+  // 周期放大到几十米后噪点变成大斑块，肉眼读作"一块脏色"而不是草地——正是报障观感。
+  const period = D / Math.min(grass.repeat.x, grass.repeat.y);
+  assert.ok(period <= 8,
+    `草地平铺周期 ${period.toFixed(1)}m > 8m：直径 ${D}m 的场地上噪声被拉成大斑块`);
+});
+
+test('转向小齿轮：定倾后自旋轴恒为世界 +y（欧拉序 YXZ），且啮合角不变', () => {
+  // 装配处写死 rotation.x=-π/2 定倾，之后每帧写 rotation.y 自旋。
+  // 默认 XYZ 序下自旋轴会随 y 一起被 x 倾斜复合出去：满舵 θ=rackTravel/pinionR≈169°，
+  // 齿轮翻着跟头转（真实小齿轮绕自身轴线转，轴线固定）。
+  const root = new THREE.Group();
+  const reg = createRegistry();
+  buildSteering(root, reg);
+  const pinion = root.getObjectByName('steering-pinion');
+  assert.ok(pinion, '小齿轮网格需带装配名（steering-pinion）');
+  const AXIS = new THREE.Vector3(0, 1, 0);
+  const col = new THREE.Vector3();
+  for (let i = -20; i <= 20; i++) {
+    const steer = i / 20;
+    reg.runUpdates(1 / 60, { steerSmooth: steer });
+    pinion.updateWorldMatrix(true, false);
+    col.setFromMatrixColumn(pinion.matrixWorld, 2); // 第三列 = 局部 +z = 齿盘自旋轴
+    const deg = (col.angleTo(AXIS) * 180) / Math.PI;
+    assert.ok(col.angleTo(AXIS) < 1e-6,
+      `steer=${steer.toFixed(2)} 时小齿轮自旋轴偏离线 ${deg.toFixed(1)}°：轴在进舵过程中被带翻`);
+  }
+  // 啮合语义（值本身）不许被"修轴"顺手改掉：θ = 齿条位移 / 小齿轮节圆半径
+  reg.runUpdates(1 / 60, { steerSmooth: 1 });
+  assert.ok(Math.abs(pinion.rotation.y + L.steering.rackTravel / L.steering.pinionR) < 1e-12,
+    `满舵小齿轮转角 ${pinion.rotation.y.toFixed(4)}rad ≠ -行程/节圆半径 ${(-L.steering.rackTravel / L.steering.pinionR).toFixed(4)}rad`);
+});
+
+test('号码牌标记接线：AI 克隆按 userData.numberPlate 换牌，圆盘几何类型不再参与判型', () => {
+  const root = new THREE.Group();
+  buildBodywork(root, createRegistry());
+  const marked = [];
+  root.traverse((o) => { if (o.userData?.numberPlate) marked.push(o); });
+  assert.equal(marked.length, 2, '玩家车应有左右两块按标记识别的号码牌');
+  assert.ok(marked.every((o) => o.geometry?.type === 'CircleGeometry'),
+    '标记到的网格应就是车身侧面那两块圆盘（对照：标记与几何当前重合）');
+
+  // 诱饵：一枚不是号码牌的圆盘（未来的油箱盖/垫圈）。判型只看标记时它不该被贴牌。
+  const decoy = new THREE.Mesh(new THREE.CircleGeometry(0.02, 16), M.alloy);
+  root.add(decoy);
+
+  const clone = buildAIVisual(root, { color: 0x1f4fd8, number: '21' });
+  const plated = [];
+  clone.traverse((o) => { if (o.isMesh && o.material?.map?.userData?.aiOwned) plated.push(o); });
+  assert.equal(plated.length, 2,
+    `克隆上被贴号码牌的网格应恰为 2 个标记面，实测 ${plated.length} 个（含几何类型误判）`);
+  assert.ok(plated.every((o) => o.userData.numberPlate === true),
+    '被贴牌的每个网格都必须同时是标记面（判据同源）');
+  let cloneDecoy = null;
+  clone.traverse((o) => { if (o.isMesh && o.geometry?.type === 'CircleGeometry' && o.geometry?.parameters?.radius === 0.02) cloneDecoy = o; });
+  assert.ok(cloneDecoy, '诱饵圆盘应随克隆一起存在');
+  assert.equal(cloneDecoy.material.userData?.aiOwned, undefined,
+    '诱饵圆盘不得被换成队涂装号码牌材质');
 });

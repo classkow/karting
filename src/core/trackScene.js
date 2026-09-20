@@ -71,11 +71,11 @@ export function buildTrackScene(track) {
   group.add(sky);
 
   // —— 草地大地面 ——
-  const grassTex = grassMap();
-  grassTex.repeat.set(150, 150);
+  // 平铺倍数由贴图工厂单点决定（textures.js grassMap）：这里事后 repeat.set 只会把
+  // wrapS 留在 ClampToEdge 上，[0,1] 之外的 UV 全被钉在边缘像素，等于整张贴没平铺。
   const grass = new THREE.Mesh(
     new THREE.CircleGeometry(400, 64),
-    new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1, metalness: 0, envMapIntensity: 0.5 })
+    new THREE.MeshStandardMaterial({ map: grassMap(), roughness: 1, metalness: 0, envMapIntensity: 0.5 })
   );
   grass.rotation.x = -Math.PI / 2;
   grass.position.y = -0.05;

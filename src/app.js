@@ -544,7 +544,7 @@ export function createApp() {
       kart.position.set(driving.x, 0, driving.z);
       kart.rotation.y = driving.yaw;
       for (const r of race.racers) {
-        r.animator.update(r.e.st, r.shell);
+        r.animator.update(r.e.st, r.shell, 0); // 摆初始位姿：dt=0，只落位不累加轮角
         race.others.push({ x: r.e.st.x, z: r.e.st.z });
         race.states.push(r.e.st);
       }
@@ -638,7 +638,7 @@ export function createApp() {
           stepAI(r.ai, r.e.st, r.shell, track, dt, { launchLock: countdown.active });
           if (r.ai.wantReset) respawnOnTrack(r.e.st, track); // 卡死自救（保进度）
           stepDriving(r.e.st, r.shell, track, dt, { launchLock: countdown.active });
-          r.animator.update(r.e.st, r.shell);
+          r.animator.update(r.e.st, r.shell, dt);
           if (!r.e.finished && r.e.st.lap >= RACE_CONFIG.laps) {
             finishEntrant(race.entrants, r.e, race.raceTime);
           }

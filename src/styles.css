@@ -1531,10 +1531,17 @@ body.track-mode #demo-caption {
 }
 
 /* 触屏驾驶按钮 */
+/* 门控落在 CSS 上，不能只靠"看不见"：驾驶层里的按钮都是 pointer-events:auto 的实心块，
+   桌面视口未点亮时 #hud-auto 正压在顶栏「指南」上（帮助页不可达），.ht-right 还与小地图互叠。
+   显隐契约见 app.js K-A5（boot 嗅探 maxTouchPoints / 首次 touch 指针事件点亮 body.touch-ui）。 */
 .hud-touch {
+  display: none;
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+body.touch-ui .hud-touch {
+  display: block;
 }
 .ht-group {
   position: absolute;
@@ -1591,6 +1598,22 @@ body.track-mode #demo-caption {
   top: 14px;
   right: 18px;
   pointer-events: auto;
+}
+
+/* 点亮态的宽屏避让（触屏笔记本 / 二合一 / 桌面档首次触屏升级）：
+   驾驶层是 pointer-events:auto 的实心按钮，必须与左下速度面板、右下小地图、顶栏入口错开。
+   下界按面板实高取：.hud-bl ≈132px + 16 底距、.hud-br = 168 小地图 + 8 间隙 + ≈33 按钮 + 16 底距
+   ≈223px、顶栏 ≈75px；再留一个按钮内边距量级的余量。手机档（≤640px）下面换成更紧的数值。
+   适用下界：视口高度 ≥620px（冒烟台钉 1600×900 与 1264×625 两档）；再矮下去驾驶层
+   三键的列高（≈206px）会顶到开关按钮，那是窗口高度问题而非门控问题，不做第四档。 */
+body.touch-ui .ht-left {
+  bottom: 176px;
+}
+body.touch-ui .ht-right {
+  bottom: 248px;
+}
+body.touch-ui #hud-auto {
+  top: 88px;
 }
 
 /* 帮助弹窗内的分区标题（赛道键位 / 触屏） */
@@ -1864,12 +1887,12 @@ body.track-mode #demo-caption {
     width: 104px;
     height: 104px;
   }
-  /* 触屏按钮上移到两面板上方，让出底部空间 */
-  .ht-left {
+  /* 触屏按钮上移到两面板上方，让出底部空间（覆盖上面的宽屏数值：手机档面板同步收窄） */
+  body.touch-ui .ht-left {
     left: 12px;
     bottom: 156px;
   }
-  .ht-right {
+  body.touch-ui .ht-right {
     right: 12px;
     bottom: 178px;
   }
@@ -1892,7 +1915,7 @@ body.track-mode #demo-caption {
     transform: none;
   }
   /* 自动油门开关移到圈速面板下方（原位叠在顶栏按钮上） */
-  #hud-auto {
+  body.touch-ui #hud-auto {
     top: 138px;
     right: 10px;
   }

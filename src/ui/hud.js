@@ -81,7 +81,11 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
   }
   syncAutoUI();
   let lastLapShown = -1;
+  // 比较基准与首屏显示同源：都取存档纪录。换车/新会话时 st.bestLapMs 从 0 起算，
+  // 若初值取 0，首圈（哪怕远慢于纪录）就会被当成"新纪录"写回存储。
   let lastBestShown = 0;
+  try { lastBestShown = +(storage.get('kart.bestLapMs') || 0); } catch { /* 忽略 */ }
+  let sessionBest = 0; // 本会话已消化过的 st.bestLapMs（变化沿检测，避免每帧读存储）
   let prevBoost = 0;
   let wrongWayShown = false;
   let hintTimer = 0;
@@ -197,11 +201,21 @@ export function initTrackHUD(container, { track, storage, onCamCycle, onExit, on
         elLaps.classList.add('hidden');
         elPos.classList.add('hidden');
       }
-      // 最佳圈（变化时 + 持久化）
-      if (st.bestLapMs && st.bestLapMs !== lastBestShown) {
-        lastBestShown = st.bestLapMs;
-        elBest.textContent = fmtMs(st.bestLapMs);
-        try { storage.set('kart.bestLapMs', String(Math.round(st.bestLapMs))); } catch { /* 忽略 */ }
+      // 最佳圈（变化时 + 持久化）：纪录的比较基准是"已存的最快"，不是"上一次显示的值"。
+      // st.bestLapMs 每次换车/新会话都从 0 起算，按"变没变"判据会把 40s 慢圈写进存档，
+      // 把 30s 的纪录抹掉；显示与存储同源于二者的较小值，慢圈只读不写。
+      if (st.bestLapMs && st.bestLapMs !== sessionBest) {
+        sessionBest = st.bestLapMs;
+        let stored = 0;
+        try { stored = +(storage.get('kart.bestLapMs') || 0); } catch { /* 忽略 */ }
+        const best = stored > 0 ? Math.min(stored, st.bestLapMs) : st.bestLapMs;
+        if (best !== lastBestShown) {
+          lastBestShown = best;
+          elBest.textContent = fmtMs(best);
+          if (best !== stored) {
+            try { storage.set('kart.bestLapMs', String(Math.round(best))); } catch { /* 忽略 */ }
+          }
+        }
       }
       // 计时/速度（10Hz）
       textAcc += dt;

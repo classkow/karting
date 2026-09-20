@@ -144,7 +144,12 @@ export function buildSteering(root, reg) {
     M.zinc
   );
   pinion.rotation.x = -Math.PI / 2;
+  // 定倾 + 逐帧写 rotation.y 自旋 ⇒ 必须 YXZ：默认 XYZ 序下自旋轴会随 y 一同被 x 倾斜复合，
+  // 满舵 θ=rackTravel/pinionR≈169° 时齿轮整个翻跟头转（真实小齿轮绕固定轴线转）。
+  // aiKarts.js 的前轮（外层转向 + 内层滚动）同法。
+  pinion.rotation.order = 'YXZ';
   pinion.position.set(0, RACK_Y + 0.017, RACK_Z);
+  pinion.name = 'steering-pinion'; // 装配态查找用（单测读它的自旋轴，见 tests/kartParts.test.js）
   rackG.add(housing, rackBar, pinion);
   root.add(rackG);
   refs.rackG = rackG;

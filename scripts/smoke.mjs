@@ -101,6 +101,9 @@ function check(name, ok, detail = '') {
   if (!ok) process.exitCode = 1;
 }
 
+// 矩形相交判定（桌面/手机两组的重叠断言共用：手机 HUD 避让 + 触屏驾驶层门控）
+const overlapRect = (a, b) => a && b && !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+
 // Windows 上 child.kill() 只杀启动进程，Chrome 子进程会残留并占用调试端口——按进程树杀
 function killTree(proc) {
   if (!proc || proc.killed) return;
@@ -392,6 +395,11 @@ async function main() {
     }
 
     // 5. 装配态截图（整车 / 传动特写）
+    // 开场运镜（app.js：setTimeout 250ms 起、1.3s 补间）由 rig.update(dt) 随泵帧推进，
+    // 先跑完再进截图与像素探针：补间未收尾时"同机位连渲两帧取差分"会把相机位移当成画面变化，
+    // 环带可见性组的 emMasked 曾因此在同一构建上抖动 4874→7662（阈值 0.9×emMasked 随之忽红忽绿）。
+    await sleep(400); // 让 app.js 的 250ms 开场延时真正起跳（补间计时器挂在 setTimeout 上）
+    await pump(60); // 60 × 1/30 = 2s > 1.3s 补间（tween.t 按 dt/dur 累加，泵帧即推进）
     async function shot(name, camPos, camTgt) {
       await evalJs(rpc, `(() => {
         document.getElementById('loader').style.display = 'none';
@@ -762,6 +770,118 @@ async function main() {
     check('赛道: 首弯 MP1 驾驶员系右弯（与平面图同手性，R03 镜像）', mirror.firstTurn === 'R',
       `firstTurn=${mirror.firstTurn} k(s=60)=${mirror.kAt60.toFixed(3)}（右弯应 k<0）`);
 
+    // 7.6 触屏驾驶层 CSS 门控（评审 #1）：body 无 touch-ui 类时驾驶层必须整体退出布局与命中测试。
+    // 基线实况：styles.css 没有 .hud-touch 显隐规则（类只写不读），#hud-auto 停在 top:14/right:18
+    // 正压顶栏「指南」→ 赛道模式帮助页不可达，驾驶按钮还与小地图互叠。
+    {
+      const touchProbe = () => evalJs(rpc, `(() => {
+        const rect = (el) => (el ? el.getBoundingClientRect().toJSON() : null);
+        const disp = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).display : null; };
+        const help = document.getElementById('btn-help');
+        const hr = help.getBoundingClientRect();
+        const hit = document.elementFromPoint(hr.left + hr.width / 2, hr.top + hr.height / 2);
+        return JSON.stringify({
+          layer: disp('.hud-touch'),
+          // #hud-auto 自身规则是 display:flex，计算值不随父级隐藏而变——收口只能按"有没有布局盒"判
+          autoLaidOut: (document.getElementById('hud-auto')?.getClientRects().length ?? 0) > 0,
+          helpHit: help === hit || help.contains(hit),
+          btnHelp: rect(document.getElementById('btn-help')),
+          btnTrack: rect(document.getElementById('btn-track')),
+          hudMap: rect(document.getElementById('hud-map')),
+          hudBl: rect(document.getElementById('hud-bl')),
+          autoBtn: rect(document.getElementById('hud-auto')),
+          htBtns: [...document.querySelectorAll('.hud-touch .ht-btn')].map((b) => rect(b)),
+        });
+      })()`).then(JSON.parse);
+      const lit = (on) => evalJs(rpc, `document.body.classList.toggle('touch-ui', ${on}); "ok"`);
+      const overlapArea = (a, b) => (a && b
+        ? Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+          * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+        : 0);
+      // 驾驶层每一个可点矩形 × 每一个应保持可达的面板/按钮（相交判据复用 overlapRect，面积只用于报障文本）
+      const clashPairs = (g) => {
+        const layer = [...g.htBtns, g.autoBtn].filter(Boolean);
+        const targets = { btnHelp: g.btnHelp, btnTrack: g.btnTrack, hudMap: g.hudMap, hudBl: g.hudBl };
+        const out = [];
+        for (const [name, t] of Object.entries(targets)) {
+          layer.forEach((l, i) => {
+            if (overlapRect(l, t)) out.push(`${i}×${name}=${overlapArea(l, t).toFixed(0)}px²`);
+          });
+        }
+        return out;
+      };
+      const sizeOf = (g) => [...g.htBtns, g.autoBtn].filter((r) => r && r.width > 0).length;
+
+      await rpc('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false });
+      await pump(2);
+      await lit(false);
+      const off = await touchProbe();
+      check('触屏门控: 未点亮 touch-ui 时 .hud-touch display=none 且 #hud-auto 无布局盒',
+        off.layer === 'none' && off.autoLaidOut === false, JSON.stringify({ layer: off.layer, autoLaidOut: off.autoLaidOut }));
+      check('触屏门控: 未点亮时 elementFromPoint(指南按钮中心) 命中 #btn-help（帮助页可达）',
+        off.helpHit === true, `helpHit=${off.helpHit}`);
+      await lit(true);
+      const on = await touchProbe();
+      await lit(false);
+      const offAgain = await touchProbe();
+      check('触屏门控: 双向门控——加 body.touch-ui 即有布局盒、去掉即回 none',
+        on.layer !== 'none' && on.autoLaidOut === true && offAgain.layer === 'none' && offAgain.autoLaidOut === false,
+        JSON.stringify({ on: [on.layer, on.autoLaidOut], off: [offAgain.layer, offAgain.autoLaidOut] }));
+      await lit(true);
+      const wide = await touchProbe();
+      check('触屏门控: 1600×900 点亮态驾驶层真实渲染（5 键 + 开关全有尺寸）',
+        wide.htBtns.length === 5 && sizeOf(wide) === 6, JSON.stringify({ n: wide.htBtns.length, sized: sizeOf(wide) }));
+      check('触屏门控: 1600×900 点亮态驾驶层与顶栏按钮/小地图/速度面板零重叠',
+        clashPairs(wide).length === 0, clashPairs(wide).join(' '));
+      check('触屏门控: 1600×900 点亮态「指南」仍可点（驾驶层不再截胡）', wide.helpHit === true);
+      await rpc('Emulation.setDeviceMetricsOverride', { width: 1264, height: 625, deviceScaleFactor: 1, mobile: false });
+      await pump(2);
+      const narrow = await touchProbe();
+      check('触屏门控: 1264×625（报障视口）点亮态驾驶层与 HUD/顶栏零重叠',
+        clashPairs(narrow).length === 0 && narrow.helpHit === true,
+        `${clashPairs(narrow).join(' ')} helpHit=${narrow.helpHit}`);
+      await rpc('Emulation.clearDeviceMetricsOverride');
+      await lit(false); // 还原桌面档，别把点亮态污染留给后续分组
+      await pump(2);
+    }
+
+    // 7.7 最佳圈持久化（评审 #8）：换车/新会话首圈慢于存档纪录时，纪录不得被抹掉。
+    // 布点方式：把会话最佳清零（= 报障场景"刚换车，st.bestLapMs 从 0 起算"；注意前面全油门
+    // +左转那段已经真跑出一个 ~10s 的圈，不清零就测不到首圈语义），再把车放到起点线前 4m、
+    // 给正向速度并回填 lapStart，泵帧走真实过线判定（crossedStartForward + 8s 防抖）。
+    {
+      const pumpLap = (lapMs) => evalJs(rpc, `(() => {
+        const T = __kart.track, st = __kart.driving, s = __kart.sim;
+        const p = T.pointAt(T.length - 4);
+        st.x = p.x; st.z = p.z; st.yaw = p.yaw;
+        const n = T.nearest(st.x, st.z, -1);
+        st.s = n.s; st.hintIdx = n.idx;
+        st.vx = 0; st.vz = 8; st.speed = 8; st.started = true;
+        st.bestLapMs = 0; // 换车语义：会话内最佳归零
+        st.lapStart = s.time - ${lapMs} / 1000;
+        const lap0 = st.lap;
+        for (let i = 0; i < 40; i++) __kart.step(1 / 30, 1, false);
+        return JSON.stringify({ crossed: st.lap > lap0, best: Math.round(st.bestLapMs) });
+      })()`).then(JSON.parse);
+      const bestView = () => evalJs(rpc, `JSON.stringify({
+        stored: localStorage.getItem('kart.bestLapMs'),
+        shown: document.getElementById('hud-best').textContent,
+      })`).then((t) => JSON.parse(t));
+      await evalJs(rpc, `localStorage.setItem('kart.bestLapMs', '30000'); "ok"`);
+      const slow = await pumpLap(40000);
+      const slowView = await bestView();
+      check('最佳圈: 前置条件成立（确实过线、会话最佳就是这圈 40s）',
+        slow.crossed === true && slow.best > 39000 && slow.best < 42000, JSON.stringify(slow));
+      check('最佳圈: 40s 慢圈不回退存档 30s 纪录（存储与显示同源）',
+        slowView.stored === '30000' && slowView.shown === '0:30.0', JSON.stringify(slowView));
+      const fast = await pumpLap(20000);
+      const fastView = await bestView();
+      check('最佳圈: 更快的圈才写盘（纪录仍可刷新，不是永不写）',
+        fast.crossed === true && +fastView.stored > 19000 && +fastView.stored < 30000 && fastView.shown !== '0:30.0',
+        JSON.stringify({ ...fast, ...fastView }));
+      await evalJs(rpc, `localStorage.removeItem('kart.bestLapMs'); "ok"`); // 清场，不给后续分组留污染
+    }
+
     // 退出练习：展台完整还原
     await evalJs(rpc, '__kart.exitTrack(); "ok"');
     await pump(30);
@@ -799,6 +919,32 @@ async function main() {
     check('比赛: AI 都在赛道上（横向偏移 < 半宽+缓冲）', raceState.onTrack.every((v) => Math.abs(+v) < 11),
       raceState.onTrack.join(','));
     check('比赛: AI 车体克隆已入场景', raceState.visuals === true);
+    // 评审 #3：AI 轮角必须是 ∫ω·dt 的累加（帧率无关口径）。逐帧泵 20×(1/60) 并用同一 dt
+    // 对 shell.wheelOmega 积分，与克隆轮子的实测角增量对账——把 rad/s 当 rad/帧累加时，
+    // 实测值会是积分值的 60 倍（同场比赛 120Hz 手机与 60Hz 桌面轮速观感差一倍）。
+    {
+      const spin = JSON.parse(await evalJs(rpc, `(() => {
+        const dt = 1 / 60, N = 20;
+        const out = [];
+        for (const r of __kart.race.racers) {
+          let wheel = null;
+          r.visual.traverse((o) => { if (o.userData?.partId === 'wheel-rr') wheel = o; });
+          if (!wheel) return JSON.stringify({ err: 'AI 克隆找不到 wheel-rr' });
+          const th0 = wheel.rotation.x;
+          let acc = 0;
+          for (let i = 0; i < N; i++) { __kart.step(dt, 1, false); acc += r.shell.wheelOmega * dt; }
+          out.push({ measured: wheel.rotation.x - th0, integral: acc });
+        }
+        return JSON.stringify(out);
+      })()`));
+      const bad = Array.isArray(spin) === false
+        ? (spin.err ?? 'unknown')
+        : spin.filter((s) => Math.abs(s.integral) <= 1
+          || Math.abs(s.measured - s.integral) > 1e-6 * Math.abs(s.integral))
+          .map((s) => `实测${s.measured.toFixed(2)}rad vs ∫ω·dt ${s.integral.toFixed(2)}rad`).join(' | ');
+      check('比赛: AI 车轮视觉滚动角 = ∫ω·dt（帧率无关，非每帧累加 rad/s）',
+        bad === '' && Array.isArray(spin) && spin.length === 3, bad);
+    }
     check('比赛: AI 克隆含可见车手且赛车服为本队涂装（paintRed 引用替换）', await evalJs(rpc,
       `__kart.race.racers.every((r) => {
         const d = r.visual.getObjectByName('driver');
@@ -872,11 +1018,11 @@ async function main() {
       check('手机: ?debug=1 诊断浮层可见且含视口/DPR/touch 信息（D4）',
         diag.exists && diag.text.includes('x') && diag.text.includes('touch:'), `text="${diag.text}"`);
     }
-    const overlapRect = (a, b) => a && b && !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
     const mgeo = () => evalJs(rpc, `(() => {
       const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect().toJSON() ?? null;
       return JSON.stringify({
         vw: innerWidth, vh: innerHeight,
+        touchLit: document.body.classList.contains('touch-ui'),
         topbar: rect('#topbar'),
         btnTrack: rect('#btn-track'),
         hudTop: rect('.hud-top'),
@@ -928,6 +1074,11 @@ async function main() {
       const g = await mgeo();
       check('手机: 顶栏不被圈速面板覆盖（hud-top 在顶栏下方）',
         g.hudTop && g.topbar && g.hudTop.top >= g.topbar.bottom - 1, `hudTop.top=${g.hudTop.top.toFixed(1)} topbar.bottom=${g.topbar.bottom.toFixed(1)}`);
+      // 门控生效的前置证据（守护）：手机档 boot 即点亮 touch-ui，驾驶层必须真的在画面上——
+      // 否则下面三条"不遮挡"会因为元素被 display:none 压成 0×0 而空过。
+      check('手机: 触屏驾驶层已点亮且按钮真实有尺寸（重叠断言非空过）',
+        g.touchLit === true && g.htLeft.every((b) => b.width > 40) && g.htRight.every((b) => b.width > 40),
+        `lit=${g.touchLit} htLeft=${g.htLeft.length} htRight=${g.htRight.length}`);
       check('手机: 触屏◀▶已渲染且不遮挡速度面板',
         g.htLeft.length === 2 && g.htLeft.every((b) => !overlapRect(b, g.hudBl)), JSON.stringify({ bl: g.hudBl, htLeft: g.htLeft }));
       check('手机: 油门/刹车/漂移已渲染且不遮挡小地图',
